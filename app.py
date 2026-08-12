@@ -82,19 +82,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 3. Header Section
-st.title("🔬 Skin Lesion Classifier")
+st.title("Skin Lesion Classifier")
 st.caption("ResNet101 Model • Random Oversampling (ROS) • Gaussian Preprocessed")
 st.markdown("---")
 
 # 4. Sidebar Details
 with st.sidebar:
-    st.header("⚙️ Model Pipeline")
+    st.header("Model Pipeline")
     st.info("**Backbone:** ResNet101")
     st.write("**Pre-processing:** $5\\times 5$ Depthwise Gaussian Blur")
     st.write("**Resampling:** Random Oversampling (ROS)")
     st.write("**Target Metrics:** High Sensitivity for Malignant Detection")
     st.markdown("---")
-    st.write("📌 *Prototype interface running in demonstration mode.*")
+    st.write(" *Prototype interface running in demonstration mode.*")
 
 # 5. File Uploader
 uploaded_file = st.file_uploader("Upload Dermoscopic Image (JPG / PNG)", type=["jpg", "jpeg", "png"])
