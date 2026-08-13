@@ -106,13 +106,13 @@ if uploaded_file is not None:
     col1, col2 = st.columns([1, 1], gap="large")
     
     with col1:
-        st.subheader("📸 Uploaded Lesion")
+        st.subheader("Uploaded Lesion")
         st.image(image, use_container_width=True)
     
     with col2:
-        st.subheader("📊 Diagnostic Output")
+        st.subheader("Diagnostic Output")
         
-        if st.button("⚡ Run Classification"):
+        if st.button("Run Classification"):
             with st.spinner("Applying Gaussian Filter & Running Inference..."):
                 time.sleep(1.2) # Simulates prediction runtime
                 
@@ -145,7 +145,7 @@ if uploaded_file is not None:
                 st.markdown("---")
                 
                 # System Reliability Metrics Panel (Sensitivity / Recall)
-                st.write("**🏥 Model Clinical Benchmarks:**")
+                st.write("**Model Clinical Benchmarks:**")
                 m_col1, m_col2 = st.columns(2)
                 with m_col1:
                     st.metric(
