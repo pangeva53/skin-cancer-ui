@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-
+import tensorflow as tf
 import time
 import os
 import gdown
@@ -62,11 +62,9 @@ st.markdown("""
 def load_real_model1():
     model_filename = 'model1_gauss_ros.keras'
     
-    # Check if model already exists locally/cached
     if not os.path.exists(model_filename):
-        # Insert your Google Drive File ID below
-        file_id = '1a2b3c4d5e6f7g8h9_EXAMPLE_ID' 
-        url = f'https://drive.google.com/uc?id=1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG'
+        file_id = '1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG' 
+        url = f'https://drive.google.com/uc?id={file_id}'
         
         with st.spinner("Downloading ResNet101 model weights (first-time boot)..."):
             gdown.download(url, model_filename, quiet=False)
@@ -94,7 +92,6 @@ def process_gaussian(pil_img):
     kernel_5x5 = kernel_5x5[:, :, tf.newaxis, tf.newaxis]
     kernel_5x5 = tf.tile(kernel_5x5, [1, 1, 3, 1])
     
-    # Apply Depthwise Conv
     blurred = tf.nn.depthwise_conv2d(img_tensor[tf.newaxis, ...], kernel_5x5, strides=[1,1,1,1], padding='SAME')
     blurred_np = tf.squeeze(blurred).numpy()
     preprocessed = resnet_preprocess(blurred_np)
@@ -135,7 +132,6 @@ if uploaded_file is not None and run_btn:
         input_tensor_m1 = process_gaussian(image)
         pred_raw_m1 = float(model1_gauss.predict(input_tensor_m1, verbose=0)[0][0])
         
-        # Calculate percentages
         malig_p1 = pred_raw_m1 * 100
         benign_p1 = (1.0 - pred_raw_m1) * 100
         
@@ -194,9 +190,9 @@ if uploaded_file is not None and run_btn:
             st.write("---")
             st.write("**Probability Breakdown**")
             st.write(f"Benign: {benign_p2:.1f}%")
-            st.progress(int(benign_p2))
+            st.progress(int(np.clip(benign_p2, 0, 100)))
             st.write(f"Malignant: {malig_p2:.1f}%")
-            st.progress(int(malig_p2))
+            st.progress(int(np.clip(malig_p2, 0, 100)))
 
         # --- MODEL 3 OUTPUT (SIMULATED) ---
         with col3:
@@ -217,9 +213,9 @@ if uploaded_file is not None and run_btn:
             st.write("---")
             st.write("**Probability Breakdown**")
             st.write(f"Benign: {benign_p3:.1f}%")
-            st.progress(int(benign_p3))
+            st.progress(int(np.clip(benign_p3, 0, 100)))
             st.write(f"Malignant: {malig_p3:.1f}%")
-            st.progress(int(malig_p3))
+            st.progress(int(np.clip(malig_p3, 0, 100)))
 
 # 8. Summary Comparison Table
 st.markdown("---")
