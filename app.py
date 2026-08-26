@@ -66,7 +66,7 @@ def load_real_model1():
     if not os.path.exists(model_filename):
         # Insert your Google Drive File ID below
         file_id = '1a2b3c4d5e6f7g8h9_EXAMPLE_ID' 
-        url = f'https://drive.google.com/uc?id={1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG}'
+        url = f'https://drive.google.com/uc?id=1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG'
         
         with st.spinner("Downloading ResNet101 model weights (first-time boot)..."):
             gdown.download(url, model_filename, quiet=False)
