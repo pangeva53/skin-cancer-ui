@@ -34,7 +34,7 @@ st.markdown("""
 
     div[data-testid="stMetric"] {
         background-color: #F9FAFB;
-        padding: 0.75rem;
+        padding: 0.6rem;
         border-radius: 6px;
         border: 1px solid #E5E7EB;
     }
@@ -92,6 +92,7 @@ def process_gaussian(pil_img):
     kernel_5x5 = kernel_5x5[:, :, tf.newaxis, tf.newaxis]
     kernel_5x5 = tf.tile(kernel_5x5, [1, 1, 3, 1])
     
+    # Apply Depthwise Conv
     blurred = tf.nn.depthwise_conv2d(img_tensor[tf.newaxis, ...], kernel_5x5, strides=[1,1,1,1], padding='SAME')
     blurred_np = tf.squeeze(blurred).numpy()
     preprocessed = resnet_preprocess(blurred_np)
@@ -132,6 +133,7 @@ if uploaded_file is not None and run_btn:
         input_tensor_m1 = process_gaussian(image)
         pred_raw_m1 = float(model1_gauss.predict(input_tensor_m1, verbose=0)[0][0])
         
+        # Percentages
         malig_p1 = pred_raw_m1 * 100
         benign_p1 = (1.0 - pred_raw_m1) * 100
         
@@ -149,19 +151,25 @@ if uploaded_file is not None and run_btn:
             st.markdown("**ResNet101 Gaussian + ROS**")
             st.caption("Mode: **Live Model** | Sampling: ROS")
             
-            if pred_raw_m1 > 0.5:
-                st.error("**Diagnosis: MALIGNANT**")
-                conf1 = malig_p1
-            else:
-                st.success("**Diagnosis: BENIGN**")
-                conf1 = benign_p1
-            
-            m1, m2 = st.columns(2)
-            with m1:
+            # Row 1: Diagnosis & Confidence Side-by-Side
+            d_col, c_col = st.columns([1.2, 1])
+            with d_col:
+                if pred_raw_m1 > 0.5:
+                    st.error("**Diagnosis: MALIGNANT**")
+                    conf1 = malig_p1
+                else:
+                    st.success("**Diagnosis: BENIGN**")
+                    conf1 = benign_p1
+            with c_col:
                 st.metric("Confidence", f"{conf1:.1f}%")
-                st.metric("Test Accuracy", "86.97%")
+            
+            # Row 2: Validation Metrics
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric("Accuracy", "86.97%")
             with m2:
                 st.metric("Sensitivity", "86.97%")
+            with m3:
                 st.metric("Specificity", "92.10%")
             
             st.write("---")
@@ -177,22 +185,29 @@ if uploaded_file is not None and run_btn:
             st.markdown("**ResNet101 Raw + ROS**")
             st.caption("Mode: Benchmark Reference | Sampling: ROS")
             
-            st.success("**Diagnosis: BENIGN**")
+            # Row 1: Diagnosis & Confidence Side-by-Side
+            d_col, c_col = st.columns([1.2, 1])
+            with d_col:
+                st.success("**Diagnosis: BENIGN**")
+                conf2 = benign_p2
+            with c_col:
+                st.metric("Confidence", f"{conf2:.1f}%")
             
-            m1, m2 = st.columns(2)
+            # Row 2: Validation Metrics
+            m1, m2, m3 = st.columns(3)
             with m1:
-                st.metric("Confidence", f"{benign_p2:.1f}%")
-                st.metric("Test Accuracy", "86.67%")
+                st.metric("Accuracy", "86.67%")
             with m2:
                 st.metric("Sensitivity", "86.67%")
+            with m3:
                 st.metric("Specificity", "91.80%")
             
             st.write("---")
             st.write("**Probability Breakdown**")
             st.write(f"Benign: {benign_p2:.1f}%")
-            st.progress(int(np.clip(benign_p2, 0, 100)))
+            st.progress(int(benign_p2))
             st.write(f"Malignant: {malig_p2:.1f}%")
-            st.progress(int(np.clip(malig_p2, 0, 100)))
+            st.progress(int(malig_p2))
 
         # --- MODEL 3 OUTPUT (SIMULATED) ---
         with col3:
@@ -200,22 +215,29 @@ if uploaded_file is not None and run_btn:
             st.markdown("**ResNet101 Gaussian (Frozen) + SMOTE**")
             st.caption("Mode: Benchmark Reference | Sampling: SMOTE-Tomek")
             
-            st.success("**Diagnosis: BENIGN**")
+            # Row 1: Diagnosis & Confidence Side-by-Side
+            d_col, c_col = st.columns([1.2, 1])
+            with d_col:
+                st.success("**Diagnosis: BENIGN**")
+                conf3 = benign_p3
+            with c_col:
+                st.metric("Confidence", f"{conf3:.1f}%")
             
-            m1, m2 = st.columns(2)
+            # Row 2: Validation Metrics
+            m1, m2, m3 = st.columns(3)
             with m1:
-                st.metric("Confidence", f"{benign_p3:.1f}%")
-                st.metric("Test Accuracy", "86.52%")
+                st.metric("Accuracy", "86.52%")
             with m2:
                 st.metric("Sensitivity", "86.52%")
+            with m3:
                 st.metric("Specificity", "91.50%")
             
             st.write("---")
             st.write("**Probability Breakdown**")
             st.write(f"Benign: {benign_p3:.1f}%")
-            st.progress(int(np.clip(benign_p3, 0, 100)))
+            st.progress(int(benign_p3))
             st.write(f"Malignant: {malig_p3:.1f}%")
-            st.progress(int(np.clip(malig_p3, 0, 100)))
+            st.progress(int(malig_p3))
 
 # 8. Summary Comparison Table
 st.markdown("---")
