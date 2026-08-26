@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. Custom Styling (Mint Theme, Professional Layout)
+# 2. Custom Styling (Mint Theme, Matching Height/Size Cards)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -32,11 +32,59 @@ st.markdown("""
         max-width: 1350px;
     }
 
+    /* Standardized Upper Result Cards */
+    .result-card {
+        height: 72px;
+        border-radius: 6px;
+        padding: 0.6rem 0.8rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        box-sizing: border-box;
+    }
+
+    .diag-benign {
+        background-color: #DCFCE7;
+        border: 1px solid #86EFAC;
+        color: #15803D;
+        font-weight: 700;
+        font-size: 0.95rem;
+    }
+
+    .diag-malignant {
+        background-color: #FEE2E2;
+        border: 1px solid #FCA5A5;
+        color: #B91C1C;
+        font-weight: 700;
+        font-size: 0.95rem;
+    }
+
+    .conf-card {
+        background-color: #FFFFFF;
+        border: 1px solid #E5E7EB;
+    }
+
+    .conf-title {
+        font-size: 0.75rem;
+        color: #6B7280;
+        font-weight: 500;
+        margin-bottom: 2px;
+    }
+
+    .conf-value {
+        font-size: 1.4rem;
+        color: #111827;
+        font-weight: 700;
+        line-height: 1.1;
+    }
+
+    /* Bottom Validation Metric Cards */
     div[data-testid="stMetric"] {
-        background-color: #F9FAFB;
-        padding: 0.6rem;
+        background-color: #FFFFFF;
+        padding: 0.5rem 0.6rem;
         border-radius: 6px;
         border: 1px solid #E5E7EB;
+        height: 68px;
     }
 
     .stButton>button {
@@ -92,7 +140,6 @@ def process_gaussian(pil_img):
     kernel_5x5 = kernel_5x5[:, :, tf.newaxis, tf.newaxis]
     kernel_5x5 = tf.tile(kernel_5x5, [1, 1, 3, 1])
     
-    # Apply Depthwise Conv
     blurred = tf.nn.depthwise_conv2d(img_tensor[tf.newaxis, ...], kernel_5x5, strides=[1,1,1,1], padding='SAME')
     blurred_np = tf.squeeze(blurred).numpy()
     preprocessed = resnet_preprocess(blurred_np)
@@ -133,7 +180,6 @@ if uploaded_file is not None and run_btn:
         input_tensor_m1 = process_gaussian(image)
         pred_raw_m1 = float(model1_gauss.predict(input_tensor_m1, verbose=0)[0][0])
         
-        # Percentages
         malig_p1 = pred_raw_m1 * 100
         benign_p1 = (1.0 - pred_raw_m1) * 100
         
@@ -145,25 +191,24 @@ if uploaded_file is not None and run_btn:
         st.subheader("Comparative Diagnostic Output")
         col1, col2, col3 = st.columns(3, gap="medium")
         
-        # --- MODEL 1 OUTPUT (LIVE MODEL) ---
+        # --- MODEL 1 OUTPUT ---
         with col1:
             st.markdown("### Model 1")
             st.markdown("**ResNet101 Gaussian + ROS**")
             st.caption("Mode: **Live Model** | Sampling: ROS")
             
-            # Row 1: Diagnosis & Confidence Side-by-Side
-            d_col, c_col = st.columns([1.2, 1])
+            d_col, c_col = st.columns([1, 1])
             with d_col:
                 if pred_raw_m1 > 0.5:
-                    st.error("**Diagnosis: MALIGNANT**")
                     conf1 = malig_p1
+                    st.markdown(f'<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
                 else:
-                    st.success("**Diagnosis: BENIGN**")
                     conf1 = benign_p1
+                    st.markdown(f'<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
             with c_col:
-                st.metric("Confidence", f"{conf1:.1f}%")
+                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf1:.1f}%</div></div>', unsafe_allow_html=True)
             
-            # Row 2: Validation Metrics
+            st.write("")
             m1, m2, m3 = st.columns(3)
             with m1:
                 st.metric("Accuracy", "86.97%")
@@ -179,21 +224,19 @@ if uploaded_file is not None and run_btn:
             st.write(f"Malignant: {malig_p1:.1f}%")
             st.progress(int(np.clip(malig_p1, 0, 100)))
 
-        # --- MODEL 2 OUTPUT (SIMULATED) ---
+        # --- MODEL 2 OUTPUT ---
         with col2:
             st.markdown("### Model 2")
             st.markdown("**ResNet101 Raw + ROS**")
             st.caption("Mode: Benchmark Reference | Sampling: ROS")
             
-            # Row 1: Diagnosis & Confidence Side-by-Side
-            d_col, c_col = st.columns([1.2, 1])
+            d_col, c_col = st.columns([1, 1])
             with d_col:
-                st.success("**Diagnosis: BENIGN**")
-                conf2 = benign_p2
+                st.markdown(f'<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
             with c_col:
-                st.metric("Confidence", f"{conf2:.1f}%")
+                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{benign_p2:.1f}%</div></div>', unsafe_allow_html=True)
             
-            # Row 2: Validation Metrics
+            st.write("")
             m1, m2, m3 = st.columns(3)
             with m1:
                 st.metric("Accuracy", "86.67%")
@@ -205,25 +248,23 @@ if uploaded_file is not None and run_btn:
             st.write("---")
             st.write("**Probability Breakdown**")
             st.write(f"Benign: {benign_p2:.1f}%")
-            st.progress(int(benign_p2))
+            st.progress(int(np.clip(benign_p2, 0, 100)))
             st.write(f"Malignant: {malig_p2:.1f}%")
-            st.progress(int(malig_p2))
+            st.progress(int(np.clip(malig_p2, 0, 100)))
 
-        # --- MODEL 3 OUTPUT (SIMULATED) ---
+        # --- MODEL 3 OUTPUT ---
         with col3:
             st.markdown("### Model 3")
             st.markdown("**ResNet101 Gaussian (Frozen) + SMOTE**")
             st.caption("Mode: Benchmark Reference | Sampling: SMOTE-Tomek")
             
-            # Row 1: Diagnosis & Confidence Side-by-Side
-            d_col, c_col = st.columns([1.2, 1])
+            d_col, c_col = st.columns([1, 1])
             with d_col:
-                st.success("**Diagnosis: BENIGN**")
-                conf3 = benign_p3
+                st.markdown(f'<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
             with c_col:
-                st.metric("Confidence", f"{conf3:.1f}%")
+                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{benign_p3:.1f}%</div></div>', unsafe_allow_html=True)
             
-            # Row 2: Validation Metrics
+            st.write("")
             m1, m2, m3 = st.columns(3)
             with m1:
                 st.metric("Accuracy", "86.52%")
@@ -235,9 +276,9 @@ if uploaded_file is not None and run_btn:
             st.write("---")
             st.write("**Probability Breakdown**")
             st.write(f"Benign: {benign_p3:.1f}%")
-            st.progress(int(benign_p3))
+            st.progress(int(np.clip(benign_p3, 0, 100)))
             st.write(f"Malignant: {malig_p3:.1f}%")
-            st.progress(int(malig_p3))
+            st.progress(int(np.clip(malig_p3, 0, 100)))
 
 # 8. Summary Comparison Table
 st.markdown("---")
