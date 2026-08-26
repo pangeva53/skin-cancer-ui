@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. Custom Styling (Mint Theme, Matching Height/Size Cards)
+# 2. Custom Styling (Mint Theme, Resized Font Metrics)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -32,11 +32,11 @@ st.markdown("""
         max-width: 1350px;
     }
 
-    /* Standardized Upper Result Cards */
+    /* Top Diagnosis & Confidence Cards */
     .result-card {
-        height: 72px;
+        height: 64px;
         border-radius: 6px;
-        padding: 0.6rem 0.8rem;
+        padding: 0.5rem 0.75rem;
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -48,7 +48,7 @@ st.markdown("""
         border: 1px solid #86EFAC;
         color: #15803D;
         font-weight: 700;
-        font-size: 0.95rem;
+        font-size: 0.88rem;
     }
 
     .diag-malignant {
@@ -56,7 +56,7 @@ st.markdown("""
         border: 1px solid #FCA5A5;
         color: #B91C1C;
         font-weight: 700;
-        font-size: 0.95rem;
+        font-size: 0.88rem;
     }
 
     .conf-card {
@@ -65,26 +65,45 @@ st.markdown("""
     }
 
     .conf-title {
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         color: #6B7280;
         font-weight: 500;
-        margin-bottom: 2px;
+        margin-bottom: 1px;
     }
 
     .conf-value {
-        font-size: 1.4rem;
+        font-size: 1.15rem;
         color: #111827;
         font-weight: 700;
         line-height: 1.1;
     }
 
-    /* Bottom Validation Metric Cards */
+    /* Bottom Validation Metric Cards - Scaled Down to Fit */
     div[data-testid="stMetric"] {
-        background-color: #FFFFFF;
-        padding: 0.5rem 0.6rem;
-        border-radius: 6px;
-        border: 1px solid #E5E7EB;
-        height: 68px;
+        background-color: #FFFFFF !important;
+        padding: 0.4rem 0.5rem !important;
+        border-radius: 6px !important;
+        border: 1px solid #E5E7EB !important;
+        min-height: 64px !important;
+        height: auto !important;
+    }
+
+    /* Metric Label (Accuracy, Sensitivity, Specificity) */
+    div[data-testid="stMetricLabel"] p {
+        font-size: 0.72rem !important;
+        color: #4B5563 !important;
+        margin-bottom: 0px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+
+    /* Metric Value (86.97%, etc.) */
+    div[data-testid="stMetricValue"] div {
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+        color: #111827 !important;
+        line-height: 1.2 !important;
     }
 
     .stButton>button {
