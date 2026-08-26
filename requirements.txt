@@ -2,5 +2,5 @@ streamlit
 Pillow
 numpy
 pandas
-tensorflow
+tensorflow-cpu
 gdown
