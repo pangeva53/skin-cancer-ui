@@ -2,11 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-import time
 import os
 import gdown
 from PIL import Image
-from tensorflow.keras.applications.resnet import preprocess_input as resnet_preprocess
+from tensorflow.keras.applications.resnet import ResNet101, preprocess_input as resnet_preprocess
 
 # 1. Page Configuration
 st.set_page_config(
@@ -15,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. Custom Styling (Mint Theme, Resized Font Metrics)
+# 2. Custom Styling (Mint Theme, Matching Height/Size Cards)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -78,7 +77,7 @@ st.markdown("""
         line-height: 1.1;
     }
 
-    /* Bottom Validation Metric Cards - Scaled Down to Fit */
+    /* Bottom Validation Metric Cards */
     div[data-testid="stMetric"] {
         background-color: #FFFFFF !important;
         padding: 0.4rem 0.5rem !important;
@@ -88,7 +87,6 @@ st.markdown("""
         height: auto !important;
     }
 
-    /* Metric Label (Accuracy, Sensitivity, Specificity) */
     div[data-testid="stMetricLabel"] p {
         font-size: 0.72rem !important;
         color: #4B5563 !important;
@@ -98,7 +96,6 @@ st.markdown("""
         text-overflow: ellipsis !important;
     }
 
-    /* Metric Value (86.97%, etc.) */
     div[data-testid="stMetricValue"] div {
         font-size: 1.05rem !important;
         font-weight: 700 !important;
@@ -124,25 +121,40 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. Load Model 1 (Auto-downloads from Drive if not cached locally)
+# 3. Load All 3 Live Models (Auto-downloads from Google Drive)
 @st.cache_resource
-def load_real_model1():
-    model_filename = 'model1_gauss_ros.keras'
-    
-    if not os.path.exists(model_filename):
-        file_id = '1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG' 
-        url = f'https://drive.google.com/uc?id={file_id}'
-        
-        with st.spinner("Downloading ResNet101 model weights (first-time boot)..."):
-            gdown.download(url, model_filename, quiet=False)
-            
-    model = tf.keras.models.load_model(model_filename)
-    return model
+def load_all_three_models():
+    # Model 1: ResNet101 Gaussian (ROS)
+    m1_file = 'model1_gauss_ros.keras'
+    if not os.path.exists(m1_file):
+        id_1 = '1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG'
+        gdown.download(f'https://drive.google.com/uc?id=1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG', m1_file, quiet=False)
+    m1 = tf.keras.models.load_model(m1_file)
 
-with st.spinner("Loading ResNet101 Gaussian (ROS) Model Weights..."):
-    model1_gauss = load_real_model1()
+    # Model 2: ResNet101 Raw (ROS)
+    m2_file = 'model2_raw_ros.keras'
+    if not os.path.exists(m2_file):
+        id_2 = 'PASTE_MODEL_2_GOOGLE_DRIVE_FILE_ID_HERE'
+        gdown.download(f'https://drive.google.com/uc?id=1gY9JDDnE_O8FIidKfVUOT06DlqPLMkO4', m2_file, quiet=False)
+    m2 = tf.keras.models.load_model(m2_file)
 
-# 4. Exact 5x5 Gaussian Preprocessing Function
+    # Model 3: Head Model (SMOTE on Frozen Features)
+    m3_file = 'model3_head_smote.keras'
+    if not os.path.exists(m3_file):
+        id_3 = 'PASTE_MODEL_3_GOOGLE_DRIVE_FILE_ID_HERE'
+        gdown.download(f'https://drive.google.com/uc?id=15KYdQfHJ-M-uBcIXVWsOEAEGSkzUELFW', m3_file, quiet=False)
+    m3_head = tf.keras.models.load_model(m3_file)
+
+    # Base feature extractor for Model 3
+    base_extractor = ResNet101(weights='imagenet', include_top=False, input_shape=(224, 224, 3), pooling='avg')
+    base_extractor.trainable = False
+
+    return m1, m2, m3_head, base_extractor
+
+with st.spinner("Initializing Deep Learning Models into Memory..."):
+    model1_gauss, model2_raw, model3_head, base_extractor = load_all_three_models()
+
+# 4. Preprocessing Functions
 def process_gaussian(pil_img):
     img = pil_img.resize((224, 224))
     img_array = np.array(img, dtype=np.float32)
@@ -162,6 +174,12 @@ def process_gaussian(pil_img):
     blurred = tf.nn.depthwise_conv2d(img_tensor[tf.newaxis, ...], kernel_5x5, strides=[1,1,1,1], padding='SAME')
     blurred_np = tf.squeeze(blurred).numpy()
     preprocessed = resnet_preprocess(blurred_np)
+    return np.expand_dims(preprocessed, axis=0)
+
+def process_raw(pil_img):
+    img = pil_img.resize((224, 224))
+    img_array = np.array(img, dtype=np.float32)
+    preprocessed = resnet_preprocess(img_array)
     return np.expand_dims(preprocessed, axis=0)
 
 # 5. Header Section
@@ -191,21 +209,29 @@ with preview_col:
 
 st.markdown("---")
 
-# 7. Diagnostic Output Grid
+# 7. Diagnostic Output Grid (All 3 Live Models)
 if uploaded_file is not None and run_btn:
-    with st.spinner("Processing image and executing inference..."):
+    with st.spinner("Processing image and executing inference across all 3 deep learning models..."):
         
-        # --- MODEL 1: REAL INFERENCE ---
-        input_tensor_m1 = process_gaussian(image)
-        pred_raw_m1 = float(model1_gauss.predict(input_tensor_m1, verbose=0)[0][0])
+        # Preprocess Image Arrays
+        img_gauss_tensor = process_gaussian(image)
+        img_raw_tensor = process_raw(image)
         
+        # Model 1 Live Prediction: ResNet101 Gaussian (ROS)
+        pred_raw_m1 = float(model1_gauss.predict(img_gauss_tensor, verbose=0)[0][0])
         malig_p1 = pred_raw_m1 * 100
         benign_p1 = (1.0 - pred_raw_m1) * 100
         
-        # --- MODEL 2 & 3: SIMULATED INFERENCE ---
-        time.sleep(0.4)
-        benign_p2, malig_p2 = 85.2, 14.8
-        benign_p3, malig_p3 = 82.0, 18.0
+        # Model 2 Live Prediction: ResNet101 Raw (ROS)
+        pred_raw_m2 = float(model2_raw.predict(img_raw_tensor, verbose=0)[0][0])
+        malig_p2 = pred_raw_m2 * 100
+        benign_p2 = (1.0 - pred_raw_m2) * 100
+        
+        # Model 3 Live Prediction: ResNet101 Gaussian Frozen Base (SMOTE-Tomek)
+        features_m3 = base_extractor.predict(img_gauss_tensor, verbose=0)
+        pred_raw_m3 = float(model3_head.predict(features_m3, verbose=0)[0][0])
+        malig_p3 = pred_raw_m3 * 100
+        benign_p3 = (1.0 - pred_raw_m3) * 100
 
         st.subheader("Comparative Diagnostic Output")
         col1, col2, col3 = st.columns(3, gap="medium")
@@ -220,10 +246,10 @@ if uploaded_file is not None and run_btn:
             with d_col:
                 if pred_raw_m1 > 0.5:
                     conf1 = malig_p1
-                    st.markdown(f'<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
                 else:
                     conf1 = benign_p1
-                    st.markdown(f'<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
             with c_col:
                 st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf1:.1f}%</div></div>', unsafe_allow_html=True)
             
@@ -247,13 +273,18 @@ if uploaded_file is not None and run_btn:
         with col2:
             st.markdown("### Model 2")
             st.markdown("**ResNet101 Raw + ROS**")
-            st.caption("Mode: Benchmark Reference | Sampling: ROS")
+            st.caption("Mode: **Live Model** | Sampling: ROS")
             
             d_col, c_col = st.columns([1, 1])
             with d_col:
-                st.markdown(f'<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
+                if pred_raw_m2 > 0.5:
+                    conf2 = malig_p2
+                    st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
+                else:
+                    conf2 = benign_p2
+                    st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
             with c_col:
-                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{benign_p2:.1f}%</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf2:.1f}%</div></div>', unsafe_allow_html=True)
             
             st.write("")
             m1, m2, m3 = st.columns(3)
@@ -275,13 +306,18 @@ if uploaded_file is not None and run_btn:
         with col3:
             st.markdown("### Model 3")
             st.markdown("**ResNet101 Gaussian (Frozen) + SMOTE**")
-            st.caption("Mode: Benchmark Reference | Sampling: SMOTE-Tomek")
+            st.caption("Mode: **Live Model** | Sampling: SMOTE-Tomek")
             
             d_col, c_col = st.columns([1, 1])
             with d_col:
-                st.markdown(f'<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
+                if pred_raw_m3 > 0.5:
+                    conf3 = malig_p3
+                    st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
+                else:
+                    conf3 = benign_p3
+                    st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
             with c_col:
-                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{benign_p3:.1f}%</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf3:.1f}%</div></div>', unsafe_allow_html=True)
             
             st.write("")
             m1, m2, m3 = st.columns(3)
@@ -298,32 +334,3 @@ if uploaded_file is not None and run_btn:
             st.progress(int(np.clip(benign_p3, 0, 100)))
             st.write(f"Malignant: {malig_p3:.1f}%")
             st.progress(int(np.clip(malig_p3, 0, 100)))
-
-# 8. Summary Comparison Table
-st.markdown("---")
-st.subheader("Pipeline Benchmark Summary")
-
-benchmark_data = {
-    "Model Pipeline": [
-        "ResNet101 Gaussian (Unfrozen)", 
-        "ResNet101 Raw (Unfrozen)", 
-        "ResNet101 Gaussian (Frozen Base)"
-    ],
-    "Resampling Technique": [
-        "Random Oversampling (ROS)", 
-        "Random Oversampling (ROS)", 
-        "SMOTE-Tomek"
-    ],
-    "Preprocessing Filter": [
-        "5x5 Gaussian Blur", 
-        "Raw (No Filter)", 
-        "5x5 Gaussian Blur"
-    ],
-    "Validation Accuracy (%)": [86.97, 86.67, 86.52],
-    "Sensitivity / Recall (%)": [86.97, 86.67, 86.52],
-    "Specificity (%)": [92.10, 91.80, 91.50],
-    "F1-Score": [0.92, 0.91, 0.90]
-}
-
-df_summary = pd.DataFrame(benchmark_data)
-st.dataframe(df_summary, use_container_width=True, hide_index=True)
