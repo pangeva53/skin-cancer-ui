@@ -15,7 +15,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # 1. Ensure users table exists
+    # 1. Users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,34 +25,37 @@ def init_db():
         )
     """)
     
-    # 2. Ensure predictions table exists
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS predictions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            patient_name TEXT DEFAULT 'Anonymous',
-            timestamp TEXT NOT NULL,
-            m1_diagnosis TEXT,
-            m1_confidence REAL,
-            m2_diagnosis TEXT,
-            m2_confidence REAL,
-            m3_diagnosis TEXT,
-            m3_confidence REAL,
-            image_data BLOB,
-            FOREIGN KEY (username) REFERENCES users (username)
-        )
-    """)
-
-    # 3. Schema migration: Add missing columns if upgrading from the old table version
-    cursor.execute("PRAGMA table_info(predictions)")
-    columns = [row[1] for row in cursor.fetchall()]
+    # 2. Check if predictions table exists and has patient_name
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='predictions'")
+    table_exists = cursor.fetchone()
     
-    if "patient_name" not in columns:
-        cursor.execute("ALTER TABLE predictions ADD COLUMN patient_name TEXT DEFAULT 'Anonymous'")
-    if "image_data" not in columns:
-        cursor.execute("ALTER TABLE predictions ADD COLUMN image_data BLOB")
-
-    # 4. Default admin
+    if table_exists:
+        cursor.execute("PRAGMA table_info(predictions)")
+        columns = [row[1] for row in cursor.fetchall()]
+        # If it is the old version without patient_name, recreate it
+        if "patient_name" not in columns:
+            cursor.execute("DROP TABLE predictions")
+            table_exists = False
+            
+    if not table_exists:
+        cursor.execute("""
+            CREATE TABLE predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                patient_name TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                m1_diagnosis TEXT,
+                m1_confidence REAL,
+                m2_diagnosis TEXT,
+                m2_confidence REAL,
+                m3_diagnosis TEXT,
+                m3_confidence REAL,
+                image_data BLOB,
+                FOREIGN KEY (username) REFERENCES users (username)
+            )
+        """)
+        
+    # 3. Ensure default admin user exists
     cursor.execute("SELECT * FROM users WHERE username = ?", ("admin",))
     if not cursor.fetchone():
         cursor.execute(

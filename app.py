@@ -440,7 +440,7 @@ with tab_diag:
                     </p>
                 </div>
             """, unsafe_allow_html=True)
-            
+
 # ==================== TAB 2: DATABASE AUDIT TRAIL ====================
 with tab_records:
     st.subheader("Diagnostic Database Records & Patient History")
@@ -449,7 +449,7 @@ with tab_records:
     df_history = db.get_user_history(st.session_state["username"])
     
     if not df_history.empty:
-        st.dataframe(df_history, use_container_width=True, hide_index=True)
+        st.dataframe(df_history, width="stretch", hide_index=True)
         
         st.markdown("---")
         st.subheader("Inspect Historical Record Image")
