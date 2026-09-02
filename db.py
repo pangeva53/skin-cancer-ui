@@ -1,13 +1,12 @@
 import sqlite3
 import hashlib
-from datetime import datetime
 import pandas as pd
+from datetime import datetime
 
 DB_NAME = "skin_lesion_app.db"
 
 def get_connection():
-    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-    return conn
+    return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
@@ -16,7 +15,6 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # 1. Users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,11 +24,12 @@ def init_db():
         )
     """)
     
-    # 2. Prediction history table
+    # Added patient_name and image_data (BLOB)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS predictions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
+            patient_name TEXT NOT NULL,
             timestamp TEXT NOT NULL,
             m1_diagnosis TEXT,
             m1_confidence REAL,
@@ -38,11 +37,11 @@ def init_db():
             m2_confidence REAL,
             m3_diagnosis TEXT,
             m3_confidence REAL,
+            image_data BLOB,
             FOREIGN KEY (username) REFERENCES users (username)
         )
     """)
     
-    # Create default admin user if not existing (admin / admin123)
     cursor.execute("SELECT * FROM users WHERE username = ?", ("admin",))
     if not cursor.fetchone():
         cursor.execute(
@@ -79,22 +78,25 @@ def verify_user(username, password):
     conn.close()
     return user is not None
 
-def log_prediction(username, m1_diag, m1_conf, m2_diag, m2_conf, m3_diag, m3_conf):
+def log_prediction(username, patient_name, m1_diag, m1_conf, m2_diag, m2_conf, m3_diag, m3_conf, image_bytes):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO predictions (
-            username, timestamp, 
+            username, patient_name, timestamp, 
             m1_diagnosis, m1_confidence, 
             m2_diagnosis, m2_confidence, 
-            m3_diagnosis, m3_confidence
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            m3_diagnosis, m3_confidence,
+            image_data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         username,
+        patient_name.strip(),
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         m1_diag, round(m1_conf, 2),
         m2_diag, round(m2_conf, 2),
-        m3_diag, round(m3_conf, 2)
+        m3_diag, round(m3_conf, 2),
+        sqlite3.Binary(image_bytes)
     ))
     conn.commit()
     conn.close()
@@ -102,11 +104,18 @@ def log_prediction(username, m1_diag, m1_conf, m2_diag, m2_conf, m3_diag, m3_con
 def get_user_history(username=None):
     conn = get_connection()
     if username and username != "admin":
-        query = "SELECT timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions WHERE username = ? ORDER BY id DESC"
+        query = "SELECT id, patient_name, timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions WHERE username = ? ORDER BY id DESC"
         df = pd.read_sql_query(query, conn, params=(username,))
     else:
-        # Admin views all records along with username
-        query = "SELECT id, username, timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions ORDER BY id DESC"
+        query = "SELECT id, username, patient_name, timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions ORDER BY id DESC"
         df = pd.read_sql_query(query, conn)
     conn.close()
     return df
+
+def get_image_by_id(record_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT image_data FROM predictions WHERE id = ?", (record_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None

@@ -269,32 +269,42 @@ with tab_diag:
     upload_col, preview_col = st.columns([1, 1], gap="large")
 
     with upload_col:
-        st.subheader("Image Input")
+        st.subheader("Patient & Image Input")
+        # Patient Name input field before file upload
+        patient_name = st.text_input("Patient Full Name / ID Code", placeholder="e.g., John Doe (P-1002)")
+        
         uploaded_file = st.file_uploader(
             "Upload Dermoscopic Image (Supported: JPG, JPEG, PNG)", 
             type=["jpg", "jpeg", "png"]
         )
-        if uploaded_file is not None:
+        
+        if uploaded_file is not None and patient_name.strip() != "":
             run_btn = st.button("Execute Multi-Model Inference")
         else:
-            st.info("Upload a dermoscopic image to evaluate predictions across all three pipelines.")
+            if uploaded_file is not None and patient_name.strip() == "":
+                st.warning("Please enter the patient's name before executing inference.")
+            else:
+                st.info("Enter patient details and upload a dermoscopic image.")
             run_btn = False
 
     with preview_col:
         if uploaded_file is not None:
             image = Image.open(uploaded_file).convert('RGB')
-            st.image(image, caption="Current Case Image", width=224)
+            st.image(image, caption=f"Case Image: {patient_name}", width=224)
 
     st.markdown("---")
 
     if uploaded_file is not None and run_btn:
-        with st.spinner("Executing low-memory sequential inference across all 3 ResNet101 models..."):
+        with st.spinner("Executing low-memory sequential inference across all 3 models..."):
+            # Convert uploaded image to bytes for BLOB storage
+            uploaded_file.seek(0)
+            image_bytes = uploaded_file.read()
+            
             img_gauss_tensor = process_gaussian(image)
             img_raw_tensor = process_raw(image)
             
             pred_raw_m1, pred_raw_m2, pred_raw_m3 = execute_low_memory_inference(img_gauss_tensor, img_raw_tensor)
 
-            # Interpret probabilities
             malig_p1 = pred_raw_m1 * 100
             benign_p1 = (1.0 - pred_raw_m1) * 100
             diag_m1 = "MALIGNANT" if pred_raw_m1 > 0.5 else "BENIGN"
@@ -310,22 +320,24 @@ with tab_diag:
             diag_m3 = "MALIGNANT" if pred_raw_m3 > 0.5 else "BENIGN"
             conf3 = malig_p3 if pred_raw_m3 > 0.5 else benign_p3
 
-            # Record audit trail in database
+            # Log prediction with patient name and image bytes
             db.log_prediction(
                 st.session_state["username"],
+                patient_name,
                 diag_m1, conf1,
                 diag_m2, conf2,
-                diag_m3, conf3
+                diag_m3, conf3,
+                image_bytes
             )
 
             st.subheader("Comparative Diagnostic Output")
             col1, col2, col3 = st.columns(3, gap="medium")
             
-            # --- MODEL 1 ---
+            # --- MODEL 1 OUTPUT ---
             with col1:
                 st.markdown("### Model 1")
                 st.markdown("**ResNet101 Gaussian + ROS**")
-                st.caption("Mode: **Live Model** | Sampling: ROS")
+                st.caption(f"Patient: **{patient_name}** | Mode: Live")
                 
                 d_col, c_col = st.columns([1, 1])
                 with d_col:
@@ -352,11 +364,11 @@ with tab_diag:
                 st.write(f"Malignant: {malig_p1:.1f}%")
                 st.progress(int(np.clip(malig_p1, 0, 100)))
 
-            # --- MODEL 2 ---
+            # --- MODEL 2 OUTPUT ---
             with col2:
                 st.markdown("### Model 2")
                 st.markdown("**ResNet101 Raw + ROS**")
-                st.caption("Mode: **Live Model** | Sampling: ROS")
+                st.caption(f"Patient: **{patient_name}** | Mode: Live")
                 
                 d_col, c_col = st.columns([1, 1])
                 with d_col:
@@ -383,11 +395,11 @@ with tab_diag:
                 st.write(f"Malignant: {malig_p2:.1f}%")
                 st.progress(int(np.clip(malig_p2, 0, 100)))
 
-            # --- MODEL 3 ---
+            # --- MODEL 3 OUTPUT ---
             with col3:
                 st.markdown("### Model 3")
                 st.markdown("**ResNet101 Gaussian (Frozen) + SMOTE**")
-                st.caption("Mode: **Live Model** | Sampling: SMOTE-Tomek")
+                st.caption(f"Patient: **{patient_name}** | Mode: Live")
                 
                 d_col, c_col = st.columns([1, 1])
                 with d_col:
@@ -414,35 +426,45 @@ with tab_diag:
                 st.write(f"Malignant: {malig_p3:.1f}%")
                 st.progress(int(np.clip(malig_p3, 0, 100)))
 
-            # Executive Interpretation Box
             st.markdown(f"""
                 <div class="summary-box">
                     <h4 style="margin:0 0 8px 0; color:#1E3A8A; font-size:1.1rem; font-weight:700;">
-                        Diagnostic Summary & Recommended Model Guidance
+                        Diagnostic Summary & Patient Record Guidance
                     </h4>
                     <p style="margin:0 0 8px 0; font-size:0.92rem; color:#374151; line-height:1.5;">
-                        <strong>Primary Recommended Pipeline:</strong> 
-                        <strong>Model 1 (ResNet101 Gaussian + Random Oversampling)</strong> is recognized as the best-performing configuration in this study, achieving the highest overall test accuracy of <strong>86.97%</strong>, sensitivity of <strong>86.97%</strong>, and specificity of <strong>92.10%</strong>.
-                    </p>
-                    <p style="margin:0 0 8px 0; font-size:0.92rem; color:#374151; line-height:1.5;">
-                        <strong>Clinical Verdict Interpretation:</strong> 
-                        Model 1 assesses this lesion as <strong style="color: {'#B91C1C' if diag_m1 == 'MALIGNANT' else '#15803D'};">{diag_m1}</strong> with <strong>{conf1:.1f}%</strong> confidence. Gaussian spatial filtering smooths skin artifact noise while end-to-end backpropagation reliably detects malignant border irregularities.
+                        <strong>Patient Evaluation:</strong> Evaluation completed successfully for <strong>{patient_name}</strong>. 
+                        <strong>Model 1</strong> is recommended as the primary baseline, achieving an accuracy of <strong>86.97%</strong> and specificity of <strong>92.10%</strong>.
                     </p>
                     <p style="margin:0; font-size:0.82rem; color:#6B7280; line-height:1.4;">
-                        <em>Disclaimer: This artificial intelligence system serves strictly as a clinical decision-support tool. It does not replace definitive histopathological evaluation or biopsy by a licensed dermatologist.</em>
+                        <em>Disclaimer: This artificial intelligence system serves strictly as a clinical decision-support tool.</em>
                     </p>
                 </div>
             """, unsafe_allow_html=True)
-
+            
 # ==================== TAB 2: DATABASE AUDIT TRAIL ====================
 with tab_records:
-    st.subheader("Diagnostic Database Records & Audit Trail")
-    st.caption("Historical lesion evaluations logged for authorized personnel.")
+    st.subheader("Diagnostic Database Records & Patient History")
+    st.caption("Inspect prior evaluations, patient names, and review uploaded lesion images.")
     
     df_history = db.get_user_history(st.session_state["username"])
     
     if not df_history.empty:
         st.dataframe(df_history, use_container_width=True, hide_index=True)
+        
+        st.markdown("---")
+        st.subheader("Inspect Historical Record Image")
+        
+        selected_id = st.selectbox("Select Record ID to view uploaded image:", options=df_history["id"].tolist())
+        
+        if selected_id:
+            img_blob = db.get_image_by_id(selected_id)
+            if img_blob:
+                import io
+                image_stream = io.BytesIO(img_blob)
+                stored_image = Image.open(image_stream)
+                st.image(stored_image, caption=f"Record ID #{selected_id} Lesion Image", width=250)
+            else:
+                st.warning("No image data found for this record.")
         
         csv_file = df_history.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -453,15 +475,3 @@ with tab_records:
         )
     else:
         st.info("No inference evaluations have been recorded in the database yet.")
-
-def get_user_history(username=None):
-    conn = get_connection()
-    if username and username != "admin":
-        query = "SELECT timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions WHERE username = ? ORDER BY id DESC"
-        df = pd.read_sql_query(query, conn, params=(username,))
-    else:
-        # Admin views all records along with username
-        query = "SELECT id, username, timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions ORDER BY id DESC"
-        df = pd.read_sql_query(query, conn)
-    conn.close()
-    return df
