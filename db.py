@@ -97,3 +97,15 @@ def log_prediction(username, m1_diag, m1_conf, m2_diag, m2_conf, m3_diag, m3_con
     ))
     conn.commit()
     conn.close()
+
+def get_user_history(username=None):
+    conn = get_connection()
+    if username and username != "admin":
+        query = "SELECT timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions WHERE username = ? ORDER BY id DESC"
+        df = pd.read_sql_query(query, conn, params=(username,))
+    else:
+        # Admin views all records along with username
+        query = "SELECT id, username, timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions ORDER BY id DESC"
+        df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df

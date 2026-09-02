@@ -37,6 +37,7 @@ st.markdown("""
         max-width: 1350px;
     }
 
+    /* Diagnosis & Confidence Cards */
     .result-card {
         height: 64px;
         border-radius: 6px;
@@ -82,6 +83,7 @@ st.markdown("""
         line-height: 1.1;
     }
 
+    /* Bottom Validation Metric Cards */
     div[data-testid="stMetric"] {
         background-color: #FFFFFF !important;
         padding: 0.4rem 0.5rem !important;
@@ -180,7 +182,7 @@ if not st.session_state["authenticated"]:
     render_auth_page()
     st.stop()
 
-# 4. Header Section
+# 4. Header Section & Session Controls
 head_left, head_right = st.columns([3, 1])
 with head_left:
     st.title("Dermatological Lesion Multi-Model Evaluation System")
@@ -194,13 +196,12 @@ with head_right:
 
 st.markdown("---")
 
-# 5. Lazy Downloader Function (Invoked only on click)
+# 5. Helper Functions (Downloads, Filters, Sequential Prediction)
 def fetch_weights(filename, file_id):
     if not os.path.exists(filename):
         url = f'https://drive.google.com/uc?id={file_id}'
         gdown.download(url, filename, quiet=False)
 
-# 6. Preprocessing Functions
 def process_gaussian(pil_img):
     img = pil_img.resize((224, 224))
     img_array = np.array(img, dtype=np.float32)
@@ -227,7 +228,6 @@ def process_raw(pil_img):
     preprocessed = resnet_preprocess(img_array)
     return np.expand_dims(preprocessed, axis=0)
 
-# Memory-Safe Sequential Inference
 def execute_low_memory_inference(img_gauss, img_raw):
     # Model 1
     fetch_weights('model1_gauss_ros.keras', '1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG')
@@ -261,170 +261,207 @@ def execute_low_memory_inference(img_gauss, img_raw):
 
     return p1, p2, p3
 
-# 7. Upload Interface
-upload_col, preview_col = st.columns([1, 1], gap="large")
+# 6. Tabbed Dashboard Navigation
+tab_diag, tab_records = st.tabs(["Diagnostic Inference", "Patient Database Records"])
 
-with upload_col:
-    st.subheader("Image Input")
-    uploaded_file = st.file_uploader(
-        "Upload Dermoscopic Image (Supported: JPG, JPEG, PNG)", 
-        type=["jpg", "jpeg", "png"]
-    )
-    if uploaded_file is not None:
-        run_btn = st.button("Execute Multi-Model Inference")
-    else:
-        st.info("Upload a dermoscopic image to evaluate predictions across all three pipelines.")
-        run_btn = False
+# ==================== TAB 1: DIAGNOSTIC INFERENCE ====================
+with tab_diag:
+    upload_col, preview_col = st.columns([1, 1], gap="large")
 
-with preview_col:
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file).convert('RGB')
-        st.image(image, caption="Current Case Image", width=224)
-
-st.markdown("---")
-
-# 8. Inference Execution & Output Display
-if uploaded_file is not None and run_btn:
-    with st.spinner("Executing low-memory sequential inference across all 3 ResNet101 models..."):
-        img_gauss_tensor = process_gaussian(image)
-        img_raw_tensor = process_raw(image)
-        
-        pred_raw_m1, pred_raw_m2, pred_raw_m3 = execute_low_memory_inference(img_gauss_tensor, img_raw_tensor)
-
-        malig_p1 = pred_raw_m1 * 100
-        benign_p1 = (1.0 - pred_raw_m1) * 100
-        diag_m1 = "MALIGNANT" if pred_raw_m1 > 0.5 else "BENIGN"
-        conf1 = malig_p1 if pred_raw_m1 > 0.5 else benign_p1
-
-        malig_p2 = pred_raw_m2 * 100
-        benign_p2 = (1.0 - pred_raw_m2) * 100
-        diag_m2 = "MALIGNANT" if pred_raw_m2 > 0.5 else "BENIGN"
-        conf2 = malig_p2 if pred_raw_m2 > 0.5 else benign_p2
-
-        malig_p3 = pred_raw_m3 * 100
-        benign_p3 = (1.0 - pred_raw_m3) * 100
-        diag_m3 = "MALIGNANT" if pred_raw_m3 > 0.5 else "BENIGN"
-        conf3 = malig_p3 if pred_raw_m3 > 0.5 else benign_p3
-
-        db.log_prediction(
-            st.session_state["username"],
-            diag_m1, conf1,
-            diag_m2, conf2,
-            diag_m3, conf3
+    with upload_col:
+        st.subheader("Image Input")
+        uploaded_file = st.file_uploader(
+            "Upload Dermoscopic Image (Supported: JPG, JPEG, PNG)", 
+            type=["jpg", "jpeg", "png"]
         )
+        if uploaded_file is not None:
+            run_btn = st.button("Execute Multi-Model Inference")
+        else:
+            st.info("Upload a dermoscopic image to evaluate predictions across all three pipelines.")
+            run_btn = False
 
-        st.subheader("Comparative Diagnostic Output")
-        col1, col2, col3 = st.columns(3, gap="medium")
+    with preview_col:
+        if uploaded_file is not None:
+            image = Image.open(uploaded_file).convert('RGB')
+            st.image(image, caption="Current Case Image", width=224)
+
+    st.markdown("---")
+
+    if uploaded_file is not None and run_btn:
+        with st.spinner("Executing low-memory sequential inference across all 3 ResNet101 models..."):
+            img_gauss_tensor = process_gaussian(image)
+            img_raw_tensor = process_raw(image)
+            
+            pred_raw_m1, pred_raw_m2, pred_raw_m3 = execute_low_memory_inference(img_gauss_tensor, img_raw_tensor)
+
+            # Interpret probabilities
+            malig_p1 = pred_raw_m1 * 100
+            benign_p1 = (1.0 - pred_raw_m1) * 100
+            diag_m1 = "MALIGNANT" if pred_raw_m1 > 0.5 else "BENIGN"
+            conf1 = malig_p1 if pred_raw_m1 > 0.5 else benign_p1
+
+            malig_p2 = pred_raw_m2 * 100
+            benign_p2 = (1.0 - pred_raw_m2) * 100
+            diag_m2 = "MALIGNANT" if pred_raw_m2 > 0.5 else "BENIGN"
+            conf2 = malig_p2 if pred_raw_m2 > 0.5 else benign_p2
+
+            malig_p3 = pred_raw_m3 * 100
+            benign_p3 = (1.0 - pred_raw_m3) * 100
+            diag_m3 = "MALIGNANT" if pred_raw_m3 > 0.5 else "BENIGN"
+            conf3 = malig_p3 if pred_raw_m3 > 0.5 else benign_p3
+
+            # Record audit trail in database
+            db.log_prediction(
+                st.session_state["username"],
+                diag_m1, conf1,
+                diag_m2, conf2,
+                diag_m3, conf3
+            )
+
+            st.subheader("Comparative Diagnostic Output")
+            col1, col2, col3 = st.columns(3, gap="medium")
+            
+            # --- MODEL 1 ---
+            with col1:
+                st.markdown("### Model 1")
+                st.markdown("**ResNet101 Gaussian + ROS**")
+                st.caption("Mode: **Live Model** | Sampling: ROS")
+                
+                d_col, c_col = st.columns([1, 1])
+                with d_col:
+                    if diag_m1 == "MALIGNANT":
+                        st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
+                with c_col:
+                    st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf1:.1f}%</div></div>', unsafe_allow_html=True)
+                
+                st.write("")
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Accuracy", "86.97%")
+                with m2:
+                    st.metric("Sensitivity", "86.97%")
+                with m3:
+                    st.metric("Specificity", "92.10%")
+                
+                st.write("---")
+                st.write("**Probability Breakdown**")
+                st.write(f"Benign: {benign_p1:.1f}%")
+                st.progress(int(np.clip(benign_p1, 0, 100)))
+                st.write(f"Malignant: {malig_p1:.1f}%")
+                st.progress(int(np.clip(malig_p1, 0, 100)))
+
+            # --- MODEL 2 ---
+            with col2:
+                st.markdown("### Model 2")
+                st.markdown("**ResNet101 Raw + ROS**")
+                st.caption("Mode: **Live Model** | Sampling: ROS")
+                
+                d_col, c_col = st.columns([1, 1])
+                with d_col:
+                    if diag_m2 == "MALIGNANT":
+                        st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
+                with c_col:
+                    st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf2:.1f}%</div></div>', unsafe_allow_html=True)
+                
+                st.write("")
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Accuracy", "86.67%")
+                with m2:
+                    st.metric("Sensitivity", "86.67%")
+                with m3:
+                    st.metric("Specificity", "91.80%")
+                
+                st.write("---")
+                st.write("**Probability Breakdown**")
+                st.write(f"Benign: {benign_p2:.1f}%")
+                st.progress(int(np.clip(benign_p2, 0, 100)))
+                st.write(f"Malignant: {malig_p2:.1f}%")
+                st.progress(int(np.clip(malig_p2, 0, 100)))
+
+            # --- MODEL 3 ---
+            with col3:
+                st.markdown("### Model 3")
+                st.markdown("**ResNet101 Gaussian (Frozen) + SMOTE**")
+                st.caption("Mode: **Live Model** | Sampling: SMOTE-Tomek")
+                
+                d_col, c_col = st.columns([1, 1])
+                with d_col:
+                    if diag_m3 == "MALIGNANT":
+                        st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
+                with c_col:
+                    st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf3:.1f}%</div></div>', unsafe_allow_html=True)
+                
+                st.write("")
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Accuracy", "86.52%")
+                with m2:
+                    st.metric("Sensitivity", "86.52%")
+                with m3:
+                    st.metric("Specificity", "91.50%")
+                
+                st.write("---")
+                st.write("**Probability Breakdown**")
+                st.write(f"Benign: {benign_p3:.1f}%")
+                st.progress(int(np.clip(benign_p3, 0, 100)))
+                st.write(f"Malignant: {malig_p3:.1f}%")
+                st.progress(int(np.clip(malig_p3, 0, 100)))
+
+            # Executive Interpretation Box
+            st.markdown(f"""
+                <div class="summary-box">
+                    <h4 style="margin:0 0 8px 0; color:#1E3A8A; font-size:1.1rem; font-weight:700;">
+                        Diagnostic Summary & Recommended Model Guidance
+                    </h4>
+                    <p style="margin:0 0 8px 0; font-size:0.92rem; color:#374151; line-height:1.5;">
+                        <strong>Primary Recommended Pipeline:</strong> 
+                        <strong>Model 1 (ResNet101 Gaussian + Random Oversampling)</strong> is recognized as the best-performing configuration in this study, achieving the highest overall test accuracy of <strong>86.97%</strong>, sensitivity of <strong>86.97%</strong>, and specificity of <strong>92.10%</strong>.
+                    </p>
+                    <p style="margin:0 0 8px 0; font-size:0.92rem; color:#374151; line-height:1.5;">
+                        <strong>Clinical Verdict Interpretation:</strong> 
+                        Model 1 assesses this lesion as <strong style="color: {'#B91C1C' if diag_m1 == 'MALIGNANT' else '#15803D'};">{diag_m1}</strong> with <strong>{conf1:.1f}%</strong> confidence. Gaussian spatial filtering smooths skin artifact noise while end-to-end backpropagation reliably detects malignant border irregularities.
+                    </p>
+                    <p style="margin:0; font-size:0.82rem; color:#6B7280; line-height:1.4;">
+                        <em>Disclaimer: This artificial intelligence system serves strictly as a clinical decision-support tool. It does not replace definitive histopathological evaluation or biopsy by a licensed dermatologist.</em>
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+
+# ==================== TAB 2: DATABASE AUDIT TRAIL ====================
+with tab_records:
+    st.subheader("Diagnostic Database Records & Audit Trail")
+    st.caption("Historical lesion evaluations logged for authorized personnel.")
+    
+    df_history = db.get_user_history(st.session_state["username"])
+    
+    if not df_history.empty:
+        st.dataframe(df_history, use_container_width=True, hide_index=True)
         
-        # Model 1
-        with col1:
-            st.markdown("### Model 1")
-            st.markdown("**ResNet101 Gaussian + ROS**")
-            st.caption("Mode: **Live Model** | Sampling: ROS")
-            
-            d_col, c_col = st.columns([1, 1])
-            with d_col:
-                if diag_m1 == "MALIGNANT":
-                    st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
-            with c_col:
-                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf1:.1f}%</div></div>', unsafe_allow_html=True)
-            
-            st.write("")
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                st.metric("Accuracy", "86.97%")
-            with m2:
-                st.metric("Sensitivity", "86.97%")
-            with m3:
-                st.metric("Specificity", "92.10%")
-            
-            st.write("---")
-            st.write("**Probability Breakdown**")
-            st.write(f"Benign: {benign_p1:.1f}%")
-            st.progress(int(np.clip(benign_p1, 0, 100)))
-            st.write(f"Malignant: {malig_p1:.1f}%")
-            st.progress(int(np.clip(malig_p1, 0, 100)))
+        csv_file = df_history.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download Historical Log (.CSV)",
+            data=csv_file,
+            file_name=f"diagnostic_history_{st.session_state['username']}.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("No inference evaluations have been recorded in the database yet.")
 
-        # Model 2
-        with col2:
-            st.markdown("### Model 2")
-            st.markdown("**ResNet101 Raw + ROS**")
-            st.caption("Mode: **Live Model** | Sampling: ROS")
-            
-            d_col, c_col = st.columns([1, 1])
-            with d_col:
-                if diag_m2 == "MALIGNANT":
-                    st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
-            with c_col:
-                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf2:.1f}%</div></div>', unsafe_allow_html=True)
-            
-            st.write("")
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                st.metric("Accuracy", "86.67%")
-            with m2:
-                st.metric("Sensitivity", "86.67%")
-            with m3:
-                st.metric("Specificity", "91.80%")
-            
-            st.write("---")
-            st.write("**Probability Breakdown**")
-            st.write(f"Benign: {benign_p2:.1f}%")
-            st.progress(int(np.clip(benign_p2, 0, 100)))
-            st.write(f"Malignant: {malig_p2:.1f}%")
-            st.progress(int(np.clip(malig_p2, 0, 100)))
-
-        # Model 3
-        with col3:
-            st.markdown("### Model 3")
-            st.markdown("**ResNet101 Gaussian (Frozen) + SMOTE**")
-            st.caption("Mode: **Live Model** | Sampling: SMOTE-Tomek")
-            
-            d_col, c_col = st.columns([1, 1])
-            with d_col:
-                if diag_m3 == "MALIGNANT":
-                    st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
-            with c_col:
-                st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf3:.1f}%</div></div>', unsafe_allow_html=True)
-            
-            st.write("")
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                st.metric("Accuracy", "86.52%")
-            with m2:
-                st.metric("Sensitivity", "86.52%")
-            with m3:
-                st.metric("Specificity", "91.50%")
-            
-            st.write("---")
-            st.write("**Probability Breakdown**")
-            st.write(f"Benign: {benign_p3:.1f}%")
-            st.progress(int(np.clip(benign_p3, 0, 100)))
-            st.write(f"Malignant: {malig_p3:.1f}%")
-            st.progress(int(np.clip(malig_p3, 0, 100)))
-
-        # 9. Recommendation Guidance Box
-        st.markdown(f"""
-            <div class="summary-box">
-                <h4 style="margin:0 0 8px 0; color:#1E3A8A; font-size:1.1rem; font-weight:700;">
-                    Diagnostic Summary & Recommended Model Guidance
-                </h4>
-                <p style="margin:0 0 8px 0; font-size:0.92rem; color:#374151; line-height:1.5;">
-                    <strong>Primary Recommended Pipeline:</strong> 
-                    <strong>Model 1 (ResNet101 Gaussian + Random Oversampling)</strong> is recognized as the best-performing configuration in this study, achieving the highest overall test accuracy of <strong>86.97%</strong>, sensitivity of <strong>86.97%</strong>, and specificity of <strong>92.10%</strong>.
-                </p>
-                <p style="margin:0 0 8px 0; font-size:0.92rem; color:#374151; line-height:1.5;">
-                    <strong>Clinical Verdict Interpretation:</strong> 
-                    Model 1 assesses this lesion as <strong style="color: {'#B91C1C' if diag_m1 == 'MALIGNANT' else '#15803D'};">{diag_m1}</strong> with <strong>{conf1:.1f}%</strong> confidence. Gaussian spatial filtering smooths skin artifact noise while end-to-end backpropagation reliably detects malignant border irregularities.
-                </p>
-                <p style="margin:0; font-size:0.82rem; color:#6B7280; line-height:1.4;">
-                    <em>Disclaimer: This artificial intelligence system serves strictly as a clinical decision-support tool. It does not replace definitive histopathological evaluation or biopsy by a licensed dermatologist.</em>
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
+def get_user_history(username=None):
+    conn = get_connection()
+    if username and username != "admin":
+        query = "SELECT timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions WHERE username = ? ORDER BY id DESC"
+        df = pd.read_sql_query(query, conn, params=(username,))
+    else:
+        # Admin views all records along with username
+        query = "SELECT id, username, timestamp, m1_diagnosis, m1_confidence, m2_diagnosis, m2_confidence, m3_diagnosis, m3_confidence FROM predictions ORDER BY id DESC"
+        df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
