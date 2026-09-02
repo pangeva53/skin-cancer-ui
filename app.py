@@ -7,6 +7,9 @@ import gdown
 from PIL import Image
 from tensorflow.keras.applications.resnet import ResNet101, preprocess_input as resnet_preprocess
 
+# Database handlers
+import db
+
 # 1. Page Configuration
 st.set_page_config(
     page_title="Dermatological Lesion Multi-Model Evaluation System",
@@ -14,7 +17,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. Custom Styling (Mint Theme, Matching Height/Size Cards)
+# Initialize Database Schema & Default Credentials
+db.init_db()
+
+# 2. Custom Styling
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -31,7 +37,7 @@ st.markdown("""
         max-width: 1350px;
     }
 
-    /* Top Diagnosis & Confidence Cards */
+    /* Standard Cards */
     .result-card {
         height: 64px;
         border-radius: 6px;
@@ -77,7 +83,6 @@ st.markdown("""
         line-height: 1.1;
     }
 
-    /* Bottom Validation Metric Cards */
     div[data-testid="stMetric"] {
         background-color: #FFFFFF !important;
         padding: 0.4rem 0.5rem !important;
@@ -103,6 +108,16 @@ st.markdown("""
         line-height: 1.2 !important;
     }
 
+    .summary-box {
+        background-color: #FFFFFF;
+        border: 1px solid #D1D5DB;
+        border-left: 5px solid #0284C7;
+        border-radius: 8px;
+        padding: 1.2rem 1.4rem;
+        margin-top: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
     .stButton>button {
         width: 100% !important;
         background-color: #0284C7 !important;
@@ -121,7 +136,56 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. Load All 3 Live Models (Auto-downloads from Google Drive)
+# 3. Session State Initialization
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+if "username" not in st.session_state:
+    st.session_state["username"] = ""
+
+# 4. Authentication Screen Handler
+def render_auth_page():
+    st.title("Clinical Diagnostic System Authentication")
+    st.caption("Secure decision-support portal for authorized personnel.")
+    st.markdown("---")
+
+    col1, col2, col3 = st.columns([1, 1.3, 1])
+    with col2:
+        tab_login, tab_register = st.tabs(["Sign In", "Register Clinician Account"])
+        
+        with tab_login:
+            st.subheader("Account Login")
+            login_user = st.text_input("Username", key="login_user")
+            login_pass = st.text_input("Password", type="password", key="login_pass")
+            
+            if st.button("Log In"):
+                if db.verify_user(login_user, login_pass):
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = login_user
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password.")
+            st.caption("Default development credentials: User: `admin` | Password: `admin123`")
+
+        with tab_register:
+            st.subheader("New Account Registration")
+            reg_user = st.text_input("Choose Username", key="reg_user")
+            reg_pass = st.text_input("Choose Password", type="password", key="reg_pass")
+            
+            if st.button("Create Account"):
+                if reg_user and reg_pass:
+                    success, msg = db.register_user(reg_user, reg_pass)
+                    if success:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+                else:
+                    st.warning("Please provide both a username and password.")
+
+if not st.session_state["authenticated"]:
+    render_auth_page()
+    st.stop()
+
+# 5. Load All 3 Live Models (Auto-downloads from Google Drive)
 @st.cache_resource
 def load_all_three_models():
     # Model 1: ResNet101 Gaussian (ROS)
@@ -145,7 +209,6 @@ def load_all_three_models():
         gdown.download(f'https://drive.google.com/uc?id=15KYdQfHJ-M-uBcIXVWsOEAEGSkzUELFW', m3_file, quiet=False)
     m3_head = tf.keras.models.load_model(m3_file)
 
-    # Base feature extractor for Model 3
     base_extractor = ResNet101(weights='imagenet', include_top=False, input_shape=(224, 224, 3), pooling='avg')
     base_extractor.trainable = False
 
@@ -154,13 +217,12 @@ def load_all_three_models():
 with st.spinner("Initializing Deep Learning Models into Memory..."):
     model1_gauss, model2_raw, model3_head, base_extractor = load_all_three_models()
 
-# 4. Preprocessing Functions
+# 6. Preprocessing Functions
 def process_gaussian(pil_img):
     img = pil_img.resize((224, 224))
     img_array = np.array(img, dtype=np.float32)
     img_tensor = tf.convert_to_tensor(img_array, dtype=tf.float32)
     
-    # 5x5 Gaussian Kernel (Sigma = 1.0)
     kernel_5x5 = tf.constant([
         [1,  4,  6,  4, 1],
         [4, 16, 24, 16, 4],
@@ -182,12 +244,21 @@ def process_raw(pil_img):
     preprocessed = resnet_preprocess(img_array)
     return np.expand_dims(preprocessed, axis=0)
 
-# 5. Header Section
-st.title("Dermatological Lesion Multi-Model Evaluation System")
-st.caption("Parallel Inference Dashboard across ResNet101 Pipelines")
+# 7. Header Section & User Controls
+head_left, head_right = st.columns([3, 1])
+with head_left:
+    st.title("Dermatological Lesion Multi-Model Evaluation System")
+    st.caption("Parallel Inference Dashboard across ResNet101 Pipelines")
+with head_right:
+    st.write(f"Logged in as: **{st.session_state['username']}**")
+    if st.button("Log Out"):
+        st.session_state["authenticated"] = False
+        st.session_state["username"] = ""
+        st.rerun()
+
 st.markdown("---")
 
-# 6. Upload & Input Display
+# 8. Upload & Input Display
 upload_col, preview_col = st.columns([1, 1], gap="large")
 
 with upload_col:
@@ -209,7 +280,7 @@ with preview_col:
 
 st.markdown("---")
 
-# 7. Diagnostic Output Grid (All 3 Live Models)
+# 9. Diagnostic Output Grid & Database Logging
 if uploaded_file is not None and run_btn:
     with st.spinner("Processing image and executing inference across all 3 deep learning models..."):
         
@@ -217,21 +288,35 @@ if uploaded_file is not None and run_btn:
         img_gauss_tensor = process_gaussian(image)
         img_raw_tensor = process_raw(image)
         
-        # Model 1 Live Prediction: ResNet101 Gaussian (ROS)
+        # Model 1 Live Prediction
         pred_raw_m1 = float(model1_gauss.predict(img_gauss_tensor, verbose=0)[0][0])
         malig_p1 = pred_raw_m1 * 100
         benign_p1 = (1.0 - pred_raw_m1) * 100
+        diag_m1 = "MALIGNANT" if pred_raw_m1 > 0.5 else "BENIGN"
+        conf1 = malig_p1 if pred_raw_m1 > 0.5 else benign_p1
         
-        # Model 2 Live Prediction: ResNet101 Raw (ROS)
+        # Model 2 Live Prediction
         pred_raw_m2 = float(model2_raw.predict(img_raw_tensor, verbose=0)[0][0])
         malig_p2 = pred_raw_m2 * 100
         benign_p2 = (1.0 - pred_raw_m2) * 100
+        diag_m2 = "MALIGNANT" if pred_raw_m2 > 0.5 else "BENIGN"
+        conf2 = malig_p2 if pred_raw_m2 > 0.5 else benign_p2
         
-        # Model 3 Live Prediction: ResNet101 Gaussian Frozen Base (SMOTE-Tomek)
+        # Model 3 Live Prediction
         features_m3 = base_extractor.predict(img_gauss_tensor, verbose=0)
         pred_raw_m3 = float(model3_head.predict(features_m3, verbose=0)[0][0])
         malig_p3 = pred_raw_m3 * 100
         benign_p3 = (1.0 - pred_raw_m3) * 100
+        diag_m3 = "MALIGNANT" if pred_raw_m3 > 0.5 else "BENIGN"
+        conf3 = malig_p3 if pred_raw_m3 > 0.5 else benign_p3
+
+        # Log prediction results to local database
+        db.log_prediction(
+            st.session_state["username"],
+            diag_m1, conf1,
+            diag_m2, conf2,
+            diag_m3, conf3
+        )
 
         st.subheader("Comparative Diagnostic Output")
         col1, col2, col3 = st.columns(3, gap="medium")
@@ -244,11 +329,9 @@ if uploaded_file is not None and run_btn:
             
             d_col, c_col = st.columns([1, 1])
             with d_col:
-                if pred_raw_m1 > 0.5:
-                    conf1 = malig_p1
+                if diag_m1 == "MALIGNANT":
                     st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
                 else:
-                    conf1 = benign_p1
                     st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
             with c_col:
                 st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf1:.1f}%</div></div>', unsafe_allow_html=True)
@@ -277,11 +360,9 @@ if uploaded_file is not None and run_btn:
             
             d_col, c_col = st.columns([1, 1])
             with d_col:
-                if pred_raw_m2 > 0.5:
-                    conf2 = malig_p2
+                if diag_m2 == "MALIGNANT":
                     st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
                 else:
-                    conf2 = benign_p2
                     st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
             with c_col:
                 st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf2:.1f}%</div></div>', unsafe_allow_html=True)
@@ -310,11 +391,9 @@ if uploaded_file is not None and run_btn:
             
             d_col, c_col = st.columns([1, 1])
             with d_col:
-                if pred_raw_m3 > 0.5:
-                    conf3 = malig_p3
+                if diag_m3 == "MALIGNANT":
                     st.markdown('<div class="result-card diag-malignant">Diagnosis:<br>MALIGNANT</div>', unsafe_allow_html=True)
                 else:
-                    conf3 = benign_p3
                     st.markdown('<div class="result-card diag-benign">Diagnosis:<br>BENIGN</div>', unsafe_allow_html=True)
             with c_col:
                 st.markdown(f'<div class="result-card conf-card"><div class="conf-title">Confidence</div><div class="conf-value">{conf3:.1f}%</div></div>', unsafe_allow_html=True)
@@ -334,3 +413,23 @@ if uploaded_file is not None and run_btn:
             st.progress(int(np.clip(benign_p3, 0, 100)))
             st.write(f"Malignant: {malig_p3:.1f}%")
             st.progress(int(np.clip(malig_p3, 0, 100)))
+
+        # 10. Executive Guidance Box
+        st.markdown(f"""
+            <div class="summary-box">
+                <h4 style="margin:0 0 8px 0; color:#1E3A8A; font-size:1.1rem; font-weight:700;">
+                    Diagnostic Summary & Recommended Model Guidance
+                </h4>
+                <p style="margin:0 0 8px 0; font-size:0.92rem; color:#374151; line-height:1.5;">
+                    <strong>Primary Recommended Pipeline:</strong> 
+                    <strong>Model 1 (ResNet101 Gaussian + Random Oversampling)</strong> is recognized as the best-performing configuration in this study, achieving the highest overall test accuracy of <strong>86.97%</strong>, sensitivity of <strong>86.97%</strong>, and specificity of <strong>92.10%</strong>.
+                </p>
+                <p style="margin:0 0 8px 0; font-size:0.92rem; color:#374151; line-height:1.5;">
+                    <strong>Clinical Verdict Interpretation:</strong> 
+                    Model 1 assesses this lesion as <strong style="color: {'#B91C1C' if diag_m1 == 'MALIGNANT' else '#15803D'};">{diag_m1}</strong> with <strong>{conf1:.1f}%</strong> confidence. Gaussian spatial filtering smooths skin artifact noise while end-to-end backpropagation reliably detects malignant border irregularities.
+                </p>
+                <p style="margin:0; font-size:0.82rem; color:#6B7280; line-height:1.4;">
+                    <em>Disclaimer: This artificial intelligence system serves strictly as a clinical decision-support tool. It does not replace definitive histopathological evaluation or biopsy by a licensed dermatologist.</em>
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
