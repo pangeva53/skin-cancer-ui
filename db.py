@@ -1,6 +1,7 @@
 import sqlite3
 import hashlib
 from datetime import datetime
+import pandas as pd
 
 DB_NAME = "skin_lesion_app.db"
 
