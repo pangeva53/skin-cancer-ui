@@ -15,6 +15,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
+    # 1. Ensure users table exists
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,12 +25,12 @@ def init_db():
         )
     """)
     
-    # Added patient_name and image_data (BLOB)
+    # 2. Ensure predictions table exists
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS predictions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
-            patient_name TEXT NOT NULL,
+            patient_name TEXT DEFAULT 'Anonymous',
             timestamp TEXT NOT NULL,
             m1_diagnosis TEXT,
             m1_confidence REAL,
@@ -41,7 +42,17 @@ def init_db():
             FOREIGN KEY (username) REFERENCES users (username)
         )
     """)
+
+    # 3. Schema migration: Add missing columns if upgrading from the old table version
+    cursor.execute("PRAGMA table_info(predictions)")
+    columns = [row[1] for row in cursor.fetchall()]
     
+    if "patient_name" not in columns:
+        cursor.execute("ALTER TABLE predictions ADD COLUMN patient_name TEXT DEFAULT 'Anonymous'")
+    if "image_data" not in columns:
+        cursor.execute("ALTER TABLE predictions ADD COLUMN image_data BLOB")
+
+    # 4. Default admin
     cursor.execute("SELECT * FROM users WHERE username = ?", ("admin",))
     if not cursor.fetchone():
         cursor.execute(
