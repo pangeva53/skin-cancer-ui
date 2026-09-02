@@ -3,11 +3,11 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import os
+import gc
 import gdown
 from PIL import Image
 from tensorflow.keras.applications.resnet import ResNet101, preprocess_input as resnet_preprocess
 
-# Database handlers
 import db
 
 # 1. Page Configuration
@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Initialize Database Schema & Default Credentials
+# Initialize Database Schema
 db.init_db()
 
 # 2. Custom Styling
@@ -37,7 +37,6 @@ st.markdown("""
         max-width: 1350px;
     }
 
-    /* Standard Cards */
     .result-card {
         height: 64px;
         border-radius: 6px;
@@ -97,8 +96,6 @@ st.markdown("""
         color: #4B5563 !important;
         margin-bottom: 0px !important;
         white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
     }
 
     div[data-testid="stMetricValue"] div {
@@ -127,7 +124,6 @@ st.markdown("""
         border-radius: 6px !important;
         height: 3.2em !important;
         border: none !important;
-        transition: all 0.2s ease;
     }
 
     .stButton>button:hover {
@@ -136,13 +132,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. Session State Initialization
+# 3. Session State Management
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "username" not in st.session_state:
     st.session_state["username"] = ""
 
-# 4. Authentication Screen Handler
 def render_auth_page():
     st.title("Clinical Diagnostic System Authentication")
     st.caption("Secure decision-support portal for authorized personnel.")
@@ -164,7 +159,7 @@ def render_auth_page():
                     st.rerun()
                 else:
                     st.error("Invalid username or password.")
-            st.caption("Default development credentials: User: `admin` | Password: `admin123`")
+            st.caption("Default credentials: User: `admin` | Password: `admin123`")
 
         with tab_register:
             st.subheader("New Account Registration")
@@ -185,39 +180,17 @@ if not st.session_state["authenticated"]:
     render_auth_page()
     st.stop()
 
-# 5. Load All 3 Live Models (Auto-downloads from Google Drive)
-@st.cache_resource
-def load_all_three_models():
-    # Model 1: ResNet101 Gaussian (ROS)
-    m1_file = 'model1_gauss_ros.keras'
-    if not os.path.exists(m1_file):
-        id_1 = '1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG'
-        gdown.download(f'https://drive.google.com/uc?id=1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG', m1_file, quiet=False)
-    m1 = tf.keras.models.load_model(m1_file)
+# 4. Model Downloader (Ensures files exist on disk without loading all into RAM at once)
+def ensure_model_downloaded(filename, file_id):
+    if not os.path.exists(filename):
+        url = f'https://drive.google.com/uc?id={file_id}'
+        gdown.download(url, filename, quiet=False)
 
-    # Model 2: ResNet101 Raw (ROS)
-    m2_file = 'model2_raw_ros.keras'
-    if not os.path.exists(m2_file):
-        id_2 = '1gY9JDDnE_O8FIidKfVUOT06DlqPLMkO4'
-        gdown.download(f'https://drive.google.com/uc?id=1gY9JDDnE_O8FIidKfVUOT06DlqPLMkO4', m2_file, quiet=False)
-    m2 = tf.keras.models.load_model(m2_file)
+ensure_model_downloaded('model1_gauss_ros.keras', '1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG')
+ensure_model_downloaded('model2_raw_ros.keras', '1gY9JDDnE_O8FIidKfVUOT06DlqPLMkO4')
+ensure_model_downloaded('model3_head_smote.keras', '15KYdQfHJ-M-uBcIXVWsOEAEGSkzUELFW')
 
-    # Model 3: Head Model (SMOTE on Frozen Features)
-    m3_file = 'model3_head_smote.keras'
-    if not os.path.exists(m3_file):
-        id_3 = '15KYdQfHJ-M-uBcIXVWsOEAEGSkzUELFW'
-        gdown.download(f'https://drive.google.com/uc?id=15KYdQfHJ-M-uBcIXVWsOEAEGSkzUELFW', m3_file, quiet=False)
-    m3_head = tf.keras.models.load_model(m3_file)
-
-    base_extractor = ResNet101(weights='imagenet', include_top=False, input_shape=(224, 224, 3), pooling='avg')
-    base_extractor.trainable = False
-
-    return m1, m2, m3_head, base_extractor
-
-with st.spinner("Initializing Deep Learning Models into Memory..."):
-    model1_gauss, model2_raw, model3_head, base_extractor = load_all_three_models()
-
-# 6. Preprocessing Functions
+# 5. Preprocessing Functions
 def process_gaussian(pil_img):
     img = pil_img.resize((224, 224))
     img_array = np.array(img, dtype=np.float32)
@@ -244,7 +217,38 @@ def process_raw(pil_img):
     preprocessed = resnet_preprocess(img_array)
     return np.expand_dims(preprocessed, axis=0)
 
-# 7. Header Section & User Controls
+# Low-Memory Sequential Predictor
+def run_pipeline_inference(img_gauss, img_raw):
+    # --- Prediction 1: Model 1 (Gaussian + ROS) ---
+    m1 = tf.keras.models.load_model('model1_gauss_ros.keras', compile=False)
+    pred_1 = float(m1.predict(img_gauss, verbose=0)[0][0])
+    del m1
+    tf.keras.backend.clear_session()
+    gc.collect()
+
+    # --- Prediction 2: Model 2 (Raw + ROS) ---
+    m2 = tf.keras.models.load_model('model2_raw_ros.keras', compile=False)
+    pred_2 = float(m2.predict(img_raw, verbose=0)[0][0])
+    del m2
+    tf.keras.backend.clear_session()
+    gc.collect()
+
+    # --- Prediction 3: Model 3 (Gaussian Frozen Base + SMOTE) ---
+    base_extractor = ResNet101(weights='imagenet', include_top=False, input_shape=(224, 224, 3), pooling='avg')
+    feats = base_extractor.predict(img_gauss, verbose=0)
+    del base_extractor
+    tf.keras.backend.clear_session()
+    gc.collect()
+
+    m3_head = tf.keras.models.load_model('model3_head_smote.keras', compile=False)
+    pred_3 = float(m3_head.predict(feats, verbose=0)[0][0])
+    del m3_head
+    tf.keras.backend.clear_session()
+    gc.collect()
+
+    return pred_1, pred_2, pred_3
+
+# 6. Header Section
 head_left, head_right = st.columns([3, 1])
 with head_left:
     st.title("Dermatological Lesion Multi-Model Evaluation System")
@@ -258,7 +262,7 @@ with head_right:
 
 st.markdown("---")
 
-# 8. Upload & Input Display
+# 7. Upload Interface
 upload_col, preview_col = st.columns([1, 1], gap="large")
 
 with upload_col:
@@ -280,37 +284,33 @@ with preview_col:
 
 st.markdown("---")
 
-# 9. Diagnostic Output Grid & Database Logging
+# 8. Inference Execution & Output Display
 if uploaded_file is not None and run_btn:
-    with st.spinner("Processing image and executing inference across all 3 deep learning models..."):
-        
-        # Preprocess Image Arrays
+    with st.spinner("Executing low-memory sequential inference across all 3 ResNet101 models..."):
         img_gauss_tensor = process_gaussian(image)
         img_raw_tensor = process_raw(image)
         
-        # Model 1 Live Prediction
-        pred_raw_m1 = float(model1_gauss.predict(img_gauss_tensor, verbose=0)[0][0])
+        pred_raw_m1, pred_raw_m2, pred_raw_m3 = run_pipeline_inference(img_gauss_tensor, img_raw_tensor)
+
+        # Model 1 Metrics
         malig_p1 = pred_raw_m1 * 100
         benign_p1 = (1.0 - pred_raw_m1) * 100
         diag_m1 = "MALIGNANT" if pred_raw_m1 > 0.5 else "BENIGN"
         conf1 = malig_p1 if pred_raw_m1 > 0.5 else benign_p1
-        
-        # Model 2 Live Prediction
-        pred_raw_m2 = float(model2_raw.predict(img_raw_tensor, verbose=0)[0][0])
+
+        # Model 2 Metrics
         malig_p2 = pred_raw_m2 * 100
         benign_p2 = (1.0 - pred_raw_m2) * 100
         diag_m2 = "MALIGNANT" if pred_raw_m2 > 0.5 else "BENIGN"
         conf2 = malig_p2 if pred_raw_m2 > 0.5 else benign_p2
-        
-        # Model 3 Live Prediction
-        features_m3 = base_extractor.predict(img_gauss_tensor, verbose=0)
-        pred_raw_m3 = float(model3_head.predict(features_m3, verbose=0)[0][0])
+
+        # Model 3 Metrics
         malig_p3 = pred_raw_m3 * 100
         benign_p3 = (1.0 - pred_raw_m3) * 100
         diag_m3 = "MALIGNANT" if pred_raw_m3 > 0.5 else "BENIGN"
         conf3 = malig_p3 if pred_raw_m3 > 0.5 else benign_p3
 
-        # Log prediction results to local database
+        # Log to Database
         db.log_prediction(
             st.session_state["username"],
             diag_m1, conf1,
@@ -414,7 +414,7 @@ if uploaded_file is not None and run_btn:
             st.write(f"Malignant: {malig_p3:.1f}%")
             st.progress(int(np.clip(malig_p3, 0, 100)))
 
-        # 10. Executive Guidance Box
+        # 9. Recommendation Guidance Box
         st.markdown(f"""
             <div class="summary-box">
                 <h4 style="margin:0 0 8px 0; color:#1E3A8A; font-size:1.1rem; font-weight:700;">
