@@ -432,52 +432,20 @@ with tab_diag:
             border_accent = "#EF4444" if diag_m1 == "MALIGNANT" else "#10B981"
 
             st.markdown(f"""
-            <div style="
-                background-color: #FFFFFF;
-                border-radius: 10px;
-                border: 1px solid #E5E7EB;
-                border-left: 6px solid {border_accent};
-                padding: 1.25rem 1.5rem;
-                margin-top: 1.5rem;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            ">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                    <h4 style="margin: 0; color: #0F172A; font-size: 1.15rem; font-weight: 700;">
-                        Diagnostic Synthesis & Recommended Model Decision
-                    </h4>
-                    <span style="
-                        background-color: {badge_bg};
-                        color: {badge_color};
-                        font-size: 0.8rem;
-                        font-weight: 700;
-                        padding: 4px 10px;
-                        border-radius: 9999px;
-                        text-transform: uppercase;
-                    ">
-                        Primary Verdict: {diag_m1}
-                    </span>
-                </div>
-
-                <div style="margin-bottom: 0.75rem; line-height: 1.6; font-size: 0.92rem; color: #334155;">
-                    <span style="font-weight: 600; color: #0F172A;">Recommended Model:</span>
-                    <strong>Model 1 (ResNet101 Gaussian + ROS)</strong> is prioritized as the study benchmark. It demonstrated superior diagnostic reliability on unseen test cases with an overall accuracy of <strong>86.97%</strong>, a sensitivity of <strong>86.97%</strong>, and a specificity of <strong>92.10%</strong>.
-                </div>
-
-                <div style="margin-bottom: 0.75rem; line-height: 1.6; font-size: 0.92rem; color: #334155;">
-                    <span style="font-weight: 600; color: #0F172A;">Clinical Interpretation:</span>
-                    The model classifies lesion <em>"{patient_name}"</em> as 
-                    <strong style="color: {badge_color};">{diag_m1}</strong> with <strong>{conf1:.1f}%</strong> certainty. The integrated 5×5 Gaussian spatial filtering removes superficial skin artifact noise and illumination variances, enhancing the network's focus on subtle border irregularities.
-                </div>
-
-                <div style="
-                    border-top: 1px dashed #E2E8F0;
-                    padding-top: 0.6rem;
-                    font-size: 0.78rem;
-                    color: #64748B;
-                    line-height: 1.4;
-                ">
-                    <strong>⚠️ Clinical Governance Notice:</strong> This platform is designed solely to support professional medical workflow triage. Findings must be correlated with clinical examination, dermatoscopy pattern analysis, and histopathological biopsy.
-                </div>
+            <div style="background-color: #FFFFFF; border-radius: 10px; border: 1px solid #E5E7EB; border-left: 6px solid {border_accent}; padding: 1.25rem 1.5rem; margin-top: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h4 style="margin: 0; color: #0F172A; font-size: 1.15rem; font-weight: 700;">Diagnostic Synthesis & Recommended Model Decision</h4>
+            <span style="background-color: {badge_bg}; color: {badge_color}; font-size: 0.8rem; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase;">Primary Verdict: {diag_m1}</span>
+            </div>
+            <div style="margin-bottom: 0.75rem; line-height: 1.6; font-size: 0.92rem; color: #334155;">
+            <span style="font-weight: 600; color: #0F172A;">Recommended Model:</span> <strong>Model 1 (ResNet101 Gaussian + ROS)</strong> is prioritized as the study benchmark. It demonstrated superior diagnostic reliability on unseen test cases with an overall accuracy of <strong>86.97%</strong>, a sensitivity of <strong>86.97%</strong>, and a specificity of <strong>92.10%</strong>.
+            </div>
+            <div style="margin-bottom: 0.75rem; line-height: 1.6; font-size: 0.92rem; color: #334155;">
+            <span style="font-weight: 600; color: #0F172A;">Clinical Interpretation:</span> The model classifies lesion <em>"{patient_name}"</em> as <strong style="color: {badge_color};">{diag_m1}</strong> with <strong>{conf1:.1f}%</strong> certainty. The integrated 5×5 Gaussian spatial filtering removes superficial skin artifact noise and illumination variances, enhancing the network's focus on subtle border irregularities.
+            </div>
+            <div style="border-top: 1px dashed #E2E8F0; padding-top: 0.6rem; font-size: 0.78rem; color: #64748B; line-height: 1.4;">
+            <strong>⚠️ Clinical Governance Notice:</strong> This platform is designed solely to support professional medical workflow triage. Findings must be correlated with clinical examination, dermatoscopy pattern analysis, and histopathological biopsy.
+            </div>
             </div>
             """, unsafe_allow_html=True)
 
