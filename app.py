@@ -198,14 +198,14 @@ def load_all_three_models():
     # Model 2: ResNet101 Raw (ROS)
     m2_file = 'model2_raw_ros.keras'
     if not os.path.exists(m2_file):
-        id_2 = 'PASTE_MODEL_2_GOOGLE_DRIVE_FILE_ID_HERE'
+        id_2 = '1gY9JDDnE_O8FIidKfVUOT06DlqPLMkO4'
         gdown.download(f'https://drive.google.com/uc?id=1gY9JDDnE_O8FIidKfVUOT06DlqPLMkO4', m2_file, quiet=False)
     m2 = tf.keras.models.load_model(m2_file)
 
     # Model 3: Head Model (SMOTE on Frozen Features)
     m3_file = 'model3_head_smote.keras'
     if not os.path.exists(m3_file):
-        id_3 = 'PASTE_MODEL_3_GOOGLE_DRIVE_FILE_ID_HERE'
+        id_3 = '15KYdQfHJ-M-uBcIXVWsOEAEGSkzUELFW'
         gdown.download(f'https://drive.google.com/uc?id=15KYdQfHJ-M-uBcIXVWsOEAEGSkzUELFW', m3_file, quiet=False)
     m3_head = tf.keras.models.load_model(m3_file)
 
