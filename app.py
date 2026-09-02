@@ -180,17 +180,27 @@ if not st.session_state["authenticated"]:
     render_auth_page()
     st.stop()
 
-# 4. Model Downloader (Ensures files exist on disk without loading all into RAM at once)
-def ensure_model_downloaded(filename, file_id):
+# 4. Header Section
+head_left, head_right = st.columns([3, 1])
+with head_left:
+    st.title("Dermatological Lesion Multi-Model Evaluation System")
+    st.caption("Parallel Inference Dashboard across ResNet101 Pipelines")
+with head_right:
+    st.write(f"Logged in as: **{st.session_state['username']}**")
+    if st.button("Log Out"):
+        st.session_state["authenticated"] = False
+        st.session_state["username"] = ""
+        st.rerun()
+
+st.markdown("---")
+
+# 5. Lazy Downloader Function (Invoked only on click)
+def fetch_weights(filename, file_id):
     if not os.path.exists(filename):
         url = f'https://drive.google.com/uc?id={file_id}'
         gdown.download(url, filename, quiet=False)
 
-ensure_model_downloaded('model1_gauss_ros.keras', '1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG')
-ensure_model_downloaded('model2_raw_ros.keras', '1gY9JDDnE_O8FIidKfVUOT06DlqPLMkO4')
-ensure_model_downloaded('model3_head_smote.keras', '15KYdQfHJ-M-uBcIXVWsOEAEGSkzUELFW')
-
-# 5. Preprocessing Functions
+# 6. Preprocessing Functions
 def process_gaussian(pil_img):
     img = pil_img.resize((224, 224))
     img_array = np.array(img, dtype=np.float32)
@@ -217,23 +227,26 @@ def process_raw(pil_img):
     preprocessed = resnet_preprocess(img_array)
     return np.expand_dims(preprocessed, axis=0)
 
-# Low-Memory Sequential Predictor
-def run_pipeline_inference(img_gauss, img_raw):
-    # --- Prediction 1: Model 1 (Gaussian + ROS) ---
+# Memory-Safe Sequential Inference
+def execute_low_memory_inference(img_gauss, img_raw):
+    # Model 1
+    fetch_weights('model1_gauss_ros.keras', '1vVTNJGIOdfUBVoR5dG-56BnG0Oug5GBG')
     m1 = tf.keras.models.load_model('model1_gauss_ros.keras', compile=False)
-    pred_1 = float(m1.predict(img_gauss, verbose=0)[0][0])
+    p1 = float(m1.predict(img_gauss, verbose=0)[0][0])
     del m1
     tf.keras.backend.clear_session()
     gc.collect()
 
-    # --- Prediction 2: Model 2 (Raw + ROS) ---
+    # Model 2
+    fetch_weights('model2_raw_ros.keras', '1gY9JDDnE_O8FIidKfVUOT06DlqPLMkO4')
     m2 = tf.keras.models.load_model('model2_raw_ros.keras', compile=False)
-    pred_2 = float(m2.predict(img_raw, verbose=0)[0][0])
+    p2 = float(m2.predict(img_raw, verbose=0)[0][0])
     del m2
     tf.keras.backend.clear_session()
     gc.collect()
 
-    # --- Prediction 3: Model 3 (Gaussian Frozen Base + SMOTE) ---
+    # Model 3
+    fetch_weights('model3_head_smote.keras', '15KYdQfHJ-M-uBcIXVWsOEAEGSkzUELFW')
     base_extractor = ResNet101(weights='imagenet', include_top=False, input_shape=(224, 224, 3), pooling='avg')
     feats = base_extractor.predict(img_gauss, verbose=0)
     del base_extractor
@@ -241,26 +254,12 @@ def run_pipeline_inference(img_gauss, img_raw):
     gc.collect()
 
     m3_head = tf.keras.models.load_model('model3_head_smote.keras', compile=False)
-    pred_3 = float(m3_head.predict(feats, verbose=0)[0][0])
+    p3 = float(m3_head.predict(feats, verbose=0)[0][0])
     del m3_head
     tf.keras.backend.clear_session()
     gc.collect()
 
-    return pred_1, pred_2, pred_3
-
-# 6. Header Section
-head_left, head_right = st.columns([3, 1])
-with head_left:
-    st.title("Dermatological Lesion Multi-Model Evaluation System")
-    st.caption("Parallel Inference Dashboard across ResNet101 Pipelines")
-with head_right:
-    st.write(f"Logged in as: **{st.session_state['username']}**")
-    if st.button("Log Out"):
-        st.session_state["authenticated"] = False
-        st.session_state["username"] = ""
-        st.rerun()
-
-st.markdown("---")
+    return p1, p2, p3
 
 # 7. Upload Interface
 upload_col, preview_col = st.columns([1, 1], gap="large")
@@ -290,27 +289,23 @@ if uploaded_file is not None and run_btn:
         img_gauss_tensor = process_gaussian(image)
         img_raw_tensor = process_raw(image)
         
-        pred_raw_m1, pred_raw_m2, pred_raw_m3 = run_pipeline_inference(img_gauss_tensor, img_raw_tensor)
+        pred_raw_m1, pred_raw_m2, pred_raw_m3 = execute_low_memory_inference(img_gauss_tensor, img_raw_tensor)
 
-        # Model 1 Metrics
         malig_p1 = pred_raw_m1 * 100
         benign_p1 = (1.0 - pred_raw_m1) * 100
         diag_m1 = "MALIGNANT" if pred_raw_m1 > 0.5 else "BENIGN"
         conf1 = malig_p1 if pred_raw_m1 > 0.5 else benign_p1
 
-        # Model 2 Metrics
         malig_p2 = pred_raw_m2 * 100
         benign_p2 = (1.0 - pred_raw_m2) * 100
         diag_m2 = "MALIGNANT" if pred_raw_m2 > 0.5 else "BENIGN"
         conf2 = malig_p2 if pred_raw_m2 > 0.5 else benign_p2
 
-        # Model 3 Metrics
         malig_p3 = pred_raw_m3 * 100
         benign_p3 = (1.0 - pred_raw_m3) * 100
         diag_m3 = "MALIGNANT" if pred_raw_m3 > 0.5 else "BENIGN"
         conf3 = malig_p3 if pred_raw_m3 > 0.5 else benign_p3
 
-        # Log to Database
         db.log_prediction(
             st.session_state["username"],
             diag_m1, conf1,
@@ -321,7 +316,7 @@ if uploaded_file is not None and run_btn:
         st.subheader("Comparative Diagnostic Output")
         col1, col2, col3 = st.columns(3, gap="medium")
         
-        # --- MODEL 1 OUTPUT ---
+        # Model 1
         with col1:
             st.markdown("### Model 1")
             st.markdown("**ResNet101 Gaussian + ROS**")
@@ -352,7 +347,7 @@ if uploaded_file is not None and run_btn:
             st.write(f"Malignant: {malig_p1:.1f}%")
             st.progress(int(np.clip(malig_p1, 0, 100)))
 
-        # --- MODEL 2 OUTPUT ---
+        # Model 2
         with col2:
             st.markdown("### Model 2")
             st.markdown("**ResNet101 Raw + ROS**")
@@ -383,7 +378,7 @@ if uploaded_file is not None and run_btn:
             st.write(f"Malignant: {malig_p2:.1f}%")
             st.progress(int(np.clip(malig_p2, 0, 100)))
 
-        # --- MODEL 3 OUTPUT ---
+        # Model 3
         with col3:
             st.markdown("### Model 3")
             st.markdown("**ResNet101 Gaussian (Frozen) + SMOTE**")
