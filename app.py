@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 import os
 import gc
+import io
 import gdown
 from PIL import Image
 from tensorflow.keras.applications.resnet import ResNet101, preprocess_input as resnet_preprocess
@@ -107,14 +108,13 @@ st.markdown("""
         line-height: 1.2 !important;
     }
 
-    .summary-box {
+    .admin-card {
         background-color: #FFFFFF;
         border: 1px solid #D1D5DB;
-        border-left: 5px solid #0284C7;
         border-radius: 8px;
-        padding: 1.2rem 1.4rem;
-        margin-top: 1.5rem;
+        padding: 1.25rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        margin-bottom: 1rem;
     }
 
     .stButton>button {
@@ -139,10 +139,12 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "username" not in st.session_state:
     st.session_state["username"] = ""
+if "role" not in st.session_state:
+    st.session_state["role"] = "user"
 
 def render_auth_page():
     st.title("Clinical Diagnostic System Authentication")
-    st.caption("Secure decision-support portal for authorized personnel.")
+    st.caption("Secure decision-support portal for authorized clinicians and administrators.")
     st.markdown("---")
 
     col1, col2, col3 = st.columns([1, 1.3, 1])
@@ -155,12 +157,14 @@ def render_auth_page():
             login_pass = st.text_input("Password", type="password", key="login_pass")
             
             if st.button("Log In"):
-                if db.verify_user(login_user, login_pass):
+                is_valid, msg, role = db.verify_user(login_user, login_pass)
+                if is_valid:
                     st.session_state["authenticated"] = True
                     st.session_state["username"] = login_user
+                    st.session_state["role"] = role
                     st.rerun()
                 else:
-                    st.error("Invalid username or password.")
+                    st.error(msg)
             st.caption("Default credentials: User: `admin` | Password: `admin123`")
 
         with tab_register:
@@ -170,7 +174,7 @@ def render_auth_page():
             
             if st.button("Create Account"):
                 if reg_user and reg_pass:
-                    success, msg = db.register_user(reg_user, reg_pass)
+                    success, msg = db.register_user(reg_user, reg_pass, role="user")
                     if success:
                         st.success(msg)
                     else:
@@ -182,21 +186,99 @@ if not st.session_state["authenticated"]:
     render_auth_page()
     st.stop()
 
-# 4. Header Section & Session Controls
+# 4. Header & Sign Out Bar
 head_left, head_right = st.columns([3, 1])
 with head_left:
     st.title("Dermatological Lesion Multi-Model Evaluation System")
-    st.caption("Parallel Inference Dashboard across ResNet101 Pipelines")
+    st.caption(f"Role: **{st.session_state['role'].upper()}** | Logged in as: **{st.session_state['username']}**")
 with head_right:
-    st.write(f"Logged in as: **{st.session_state['username']}**")
     if st.button("Log Out"):
         st.session_state["authenticated"] = False
         st.session_state["username"] = ""
+        st.session_state["role"] = "user"
         st.rerun()
 
 st.markdown("---")
 
-# 5. Helper Functions (Downloads, Filters, Sequential Prediction)
+# ==============================================================================
+# VIEW 1: ADMIN CONSOLE (NO IMAGE UPLOAD / USER MANAGEMENT ONLY)
+# ==============================================================================
+if st.session_state["role"] == "admin":
+    st.subheader("🛠️ Administrator Console: User & Access Management")
+    st.caption("Review existing system credentials, manage active/inactive account statuses, or provision accounts.")
+
+    col_mgmt, col_create = st.columns([2, 1], gap="large")
+
+    with col_mgmt:
+        st.markdown("#### Registered Clinicians & System Accounts")
+        users_df = db.get_all_users()
+        
+        # Display active vs inactive count
+        active_count = len(users_df[users_df['status'] == 'active'])
+        inactive_count = len(users_df[users_df['status'] == 'inactive'])
+        
+        m_a, m_i, m_t = st.columns(3)
+        m_a.metric("Active Users", active_count)
+        m_i.metric("Inactive Users", inactive_count)
+        m_t.metric("Total Accounts", len(users_df))
+
+        st.write("")
+        st.dataframe(users_df, width="stretch", hide_index=True)
+
+        st.markdown("---")
+        st.markdown("#### User Account Controls")
+        
+        # Select user to manage (prevent altering the master admin)
+        manageable_users = users_df[users_df["username"] != "admin"]
+        if not manageable_users.empty:
+            sel_user_id = st.selectbox(
+                "Select User to Update / Remove:", 
+                options=manageable_users["id"].tolist(),
+                format_func=lambda x: f"ID: {x} | User: {manageable_users[manageable_users['id'] == x]['username'].values[0]} | Status: {manageable_users[manageable_users['id'] == x]['status'].values[0]}"
+            )
+            
+            selected_row = manageable_users[manageable_users["id"] == sel_user_id].iloc[0]
+            
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                action_text = "Deactivate User" if selected_row["status"] == "active" else "Activate User"
+                if st.button(action_text):
+                    db.toggle_user_status(sel_user_id, selected_row["status"])
+                    st.success(f"Status for '{selected_row['username']}' updated.")
+                    st.rerun()
+            with btn_col2:
+                if st.button("Delete Account", type="secondary"):
+                    db.delete_user(sel_user_id)
+                    st.warning(f"Account '{selected_row['username']}' permanently removed.")
+                    st.rerun()
+        else:
+            st.info("No standard clinician accounts registered yet.")
+
+    with col_create:
+        st.markdown("#### Provision New Account")
+        with st.container():
+            new_u = st.text_input("New Username", key="admin_new_u")
+            new_p = st.text_input("New Password", type="password", key="admin_new_p")
+            new_r = st.selectbox("Assign System Role", ["user", "admin"], key="admin_new_r")
+            
+            if st.button("Create Account Directly"):
+                if new_u.strip() and new_p.strip():
+                    ok, resp = db.register_user(new_u, new_p, role=new_r)
+                    if ok:
+                        st.success(f"Account for '{new_u}' created as '{new_r}'.")
+                        st.rerun()
+                    else:
+                        st.error(resp)
+                else:
+                    st.warning("Please fill in all fields.")
+
+    st.stop()  # Stops execution so admin never reaches inference UI
+
+# ==============================================================================
+# VIEW 2: STANDARD USER CLINICAL DASHBOARD
+# ==============================================================================
+
+# Helper functions for inference
 def fetch_weights(filename, file_id):
     if not os.path.exists(filename):
         url = f'https://drive.google.com/uc?id={file_id}'
@@ -261,45 +343,36 @@ def execute_low_memory_inference(img_gauss, img_raw):
 
     return p1, p2, p3
 
-# 6. Tabbed Dashboard Navigation
-tab_diag, tab_records = st.tabs(["Diagnostic Inference", "Patient Database Records"])
+tab_diag, tab_records = st.tabs(["Diagnostic Inference", "Database Records"])
 
-# ==================== TAB 1: DIAGNOSTIC INFERENCE ====================
+# --- USER TAB 1: INFERENCE ---
 with tab_diag:
     upload_col, preview_col = st.columns([1, 1], gap="large")
 
     with upload_col:
-        st.subheader("Patient & Image Input")
-        # Patient Name input field before file upload
-        patient_name = st.text_input("Patient Full Name / ID Code", placeholder="e.g., John Doe (P-1002)")
-        
+        st.subheader("Image Input")
         uploaded_file = st.file_uploader(
             "Upload Dermoscopic Image (Supported: JPG, JPEG, PNG)", 
             type=["jpg", "jpeg", "png"]
         )
-        
-        if uploaded_file is not None and patient_name.strip() != "":
+        if uploaded_file is not None:
             run_btn = st.button("Execute Multi-Model Inference")
         else:
-            if uploaded_file is not None and patient_name.strip() == "":
-                st.warning("Please enter the patient's name before executing inference.")
-            else:
-                st.info("Enter patient details and upload a dermoscopic image.")
+            st.info("Upload a dermoscopic image to evaluate predictions across all three pipelines.")
             run_btn = False
 
     with preview_col:
         if uploaded_file is not None:
             image = Image.open(uploaded_file).convert('RGB')
-            st.image(image, caption=f"Case Image: {patient_name}", width=224)
+            st.image(image, caption="Current Case Image", width=224)
 
     st.markdown("---")
 
     if uploaded_file is not None and run_btn:
-        with st.spinner("Executing low-memory sequential inference across all 3 models..."):
-            # Convert uploaded image to bytes for BLOB storage
+        with st.spinner("Executing low-memory sequential inference across all 3 ResNet101 models..."):
             uploaded_file.seek(0)
             image_bytes = uploaded_file.read()
-            
+
             img_gauss_tensor = process_gaussian(image)
             img_raw_tensor = process_raw(image)
             
@@ -320,10 +393,9 @@ with tab_diag:
             diag_m3 = "MALIGNANT" if pred_raw_m3 > 0.5 else "BENIGN"
             conf3 = malig_p3 if pred_raw_m3 > 0.5 else benign_p3
 
-            # Log prediction with patient name and image bytes
+            # Record in DB without patient name
             db.log_prediction(
                 st.session_state["username"],
-                patient_name,
                 diag_m1, conf1,
                 diag_m2, conf2,
                 diag_m3, conf3,
@@ -333,11 +405,11 @@ with tab_diag:
             st.subheader("Comparative Diagnostic Output")
             col1, col2, col3 = st.columns(3, gap="medium")
             
-            # --- MODEL 1 OUTPUT ---
+            # Model 1
             with col1:
                 st.markdown("### Model 1")
                 st.markdown("**ResNet101 Gaussian + ROS**")
-                st.caption(f"Patient: **{patient_name}** | Mode: Live")
+                st.caption("Mode: **Live Model** | Sampling: ROS")
                 
                 d_col, c_col = st.columns([1, 1])
                 with d_col:
@@ -364,11 +436,11 @@ with tab_diag:
                 st.write(f"Malignant: {malig_p1:.1f}%")
                 st.progress(int(np.clip(malig_p1, 0, 100)))
 
-            # --- MODEL 2 OUTPUT ---
+            # Model 2
             with col2:
                 st.markdown("### Model 2")
                 st.markdown("**ResNet101 Raw + ROS**")
-                st.caption(f"Patient: **{patient_name}** | Mode: Live")
+                st.caption("Mode: **Live Model** | Sampling: ROS")
                 
                 d_col, c_col = st.columns([1, 1])
                 with d_col:
@@ -395,11 +467,11 @@ with tab_diag:
                 st.write(f"Malignant: {malig_p2:.1f}%")
                 st.progress(int(np.clip(malig_p2, 0, 100)))
 
-            # --- MODEL 3 OUTPUT ---
+            # Model 3
             with col3:
                 st.markdown("### Model 3")
                 st.markdown("**ResNet101 Gaussian (Frozen) + SMOTE**")
-                st.caption(f"Patient: **{patient_name}** | Mode: Live")
+                st.caption("Mode: **Live Model** | Sampling: SMOTE-Tomek")
                 
                 d_col, c_col = st.columns([1, 1])
                 with d_col:
@@ -426,60 +498,68 @@ with tab_diag:
                 st.write(f"Malignant: {malig_p3:.1f}%")
                 st.progress(int(np.clip(malig_p3, 0, 100)))
 
-            # Color theme switching based on diagnosis
+            # Summary Box
             badge_bg = "#FEE2E2" if diag_m1 == "MALIGNANT" else "#DCFCE7"
             badge_color = "#991B1B" if diag_m1 == "MALIGNANT" else "#166534"
             border_accent = "#EF4444" if diag_m1 == "MALIGNANT" else "#10B981"
 
             st.markdown(f"""
-            <div style="background-color: #FFFFFF; border-radius: 10px; border: 1px solid #E5E7EB; border-left: 6px solid {border_accent}; padding: 1.25rem 1.5rem; margin-top: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-            <h4 style="margin: 0; color: #0F172A; font-size: 1.15rem; font-weight: 700;">Diagnostic Synthesis & Recommended Model Decision</h4>
-            <span style="background-color: {badge_bg}; color: {badge_color}; font-size: 0.8rem; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase;">Primary Verdict: {diag_m1}</span>
-            </div>
-            <div style="margin-bottom: 0.75rem; line-height: 1.6; font-size: 0.92rem; color: #334155;">
-            <span style="font-weight: 600; color: #0F172A;">Recommended Model:</span> <strong>Model 1 (ResNet101 Gaussian + ROS)</strong> is prioritized as the study benchmark. It demonstrated superior diagnostic reliability on unseen test cases with an overall accuracy of <strong>86.97%</strong>, a sensitivity of <strong>86.97%</strong>, and a specificity of <strong>92.10%</strong>.
-            </div>
-            <div style="margin-bottom: 0.75rem; line-height: 1.6; font-size: 0.92rem; color: #334155;">
-            <span style="font-weight: 600; color: #0F172A;">Clinical Interpretation:</span> The model classifies lesion <em>"{patient_name}"</em> as <strong style="color: {badge_color};">{diag_m1}</strong> with <strong>{conf1:.1f}%</strong> certainty. The integrated 5×5 Gaussian spatial filtering removes superficial skin artifact noise and illumination variances, enhancing the network's focus on subtle border irregularities.
-            </div>
-            <div style="border-top: 1px dashed #E2E8F0; padding-top: 0.6rem; font-size: 0.78rem; color: #64748B; line-height: 1.4;">
-            <strong>⚠️ Clinical Governance Notice:</strong> This platform is designed solely to support professional medical workflow triage. Findings must be correlated with clinical examination, dermatoscopy pattern analysis, and histopathological biopsy.
-            </div>
-            </div>
-            """, unsafe_allow_html=True)
+<div style="background-color: #FFFFFF; border-radius: 10px; border: 1px solid #E5E7EB; border-left: 6px solid {border_accent}; padding: 1.25rem 1.5rem; margin-top: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+<h4 style="margin: 0; color: #0F172A; font-size: 1.15rem; font-weight: 700;">Diagnostic Synthesis & Recommended Model Decision</h4>
+<span style="background-color: {badge_bg}; color: {badge_color}; font-size: 0.8rem; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase;">Primary Verdict: {diag_m1}</span>
+</div>
+<div style="margin-bottom: 0.75rem; line-height: 1.6; font-size: 0.92rem; color: #334155;">
+<span style="font-weight: 600; color: #0F172A;">Recommended Model:</span> <strong>Model 1 (ResNet101 Gaussian + ROS)</strong> is prioritized as the study benchmark. It demonstrated superior diagnostic reliability on unseen test cases with an overall accuracy of <strong>86.97%</strong>, a sensitivity of <strong>86.97%</strong>, and a specificity of <strong>92.10%</strong>.
+</div>
+<div style="margin-bottom: 0.75rem; line-height: 1.6; font-size: 0.92rem; color: #334155;">
+<span style="font-weight: 600; color: #0F172A;">Clinical Interpretation:</span> The model classifies the uploaded lesion as <strong style="color: {badge_color};">{diag_m1}</strong> with <strong>{conf1:.1f}%</strong> certainty. The integrated 5×5 Gaussian spatial filtering removes superficial skin artifact noise while end-to-end backpropagation reliably detects malignant border irregularities.
+</div>
+<div style="border-top: 1px dashed #E2E8F0; padding-top: 0.6rem; font-size: 0.78rem; color: #64748B; line-height: 1.4;">
+<strong>⚠️ Clinical Governance Notice:</strong> This platform is designed solely to support professional medical workflow triage. Findings must be correlated with clinical examination, dermatoscopy pattern analysis, and histopathological biopsy.
+</div>
+</div>
+""", unsafe_allow_html=True)
 
-# ==================== TAB 2: DATABASE AUDIT TRAIL ====================
+# --- USER TAB 2: DATABASE HISTORY (NO ID COLUMN) ---
 with tab_records:
-    st.subheader("Diagnostic Database Records & Patient History")
-    st.caption("Inspect prior evaluations, patient names, and review uploaded lesion images.")
+    st.subheader("Personal Diagnostic Audit Trail")
+    st.caption(f"Historical diagnostic logs recorded under session account: **{st.session_state['username']}**")
     
     df_history = db.get_user_history(st.session_state["username"])
     
     if not df_history.empty:
+        # Dataframe shown without 'id' column
         st.dataframe(df_history, width="stretch", hide_index=True)
         
         st.markdown("---")
-        st.subheader("Inspect Historical Record Image")
+        st.subheader("Review Evaluated Lesion Images")
         
-        selected_id = st.selectbox("Select Record ID to view uploaded image:", options=df_history["id"].tolist())
+        # User picks by timestamp/record entry
+        records_with_imgs = db.get_user_records_with_images(st.session_state["username"])
+        timestamp_options = {r[0]: f"Evaluation at {r[1]}" for r in records_with_imgs}
         
-        if selected_id:
-            img_blob = db.get_image_by_id(selected_id)
-            if img_blob:
-                import io
-                image_stream = io.BytesIO(img_blob)
-                stored_image = Image.open(image_stream)
-                st.image(stored_image, caption=f"Record ID #{selected_id} Lesion Image", width=250)
+        sel_rec_id = st.selectbox(
+            "Select Evaluation Timestamp to inspect image:",
+            options=list(timestamp_options.keys()),
+            format_func=lambda x: timestamp_options[x]
+        )
+        
+        if sel_rec_id:
+            # Find the selected record's image bytes
+            target_record = next((r for r in records_with_imgs if r[0] == sel_rec_id), None)
+            if target_record and target_record[2]:
+                stored_img = Image.open(io.BytesIO(target_record[2]))
+                st.image(stored_img, caption=f"Case Evaluated at: {target_record[1]}", width=250)
             else:
-                st.warning("No image data found for this record.")
+                st.warning("No image data found for this evaluation.")
         
         csv_file = df_history.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="Download Historical Log (.CSV)",
+            label="Download Log (.CSV)",
             data=csv_file,
             file_name=f"diagnostic_history_{st.session_state['username']}.csv",
             mime="text/csv"
         )
     else:
-        st.info("No inference evaluations have been recorded in the database yet.")
+        st.info("No inference evaluations have been recorded for your account yet.")
